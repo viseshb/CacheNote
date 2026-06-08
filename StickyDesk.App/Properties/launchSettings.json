@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "StickyDesk.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "StickyDesk.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

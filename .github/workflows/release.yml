@@ -1,0 +1,42 @@
+name: Release
+
+# Push to master → bump version, build the self-contained installer, publish a GitHub Release.
+# The in-app updater (M10) reads releases/latest and offers a one-click update.
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Compute version
+        id: ver
+        shell: pwsh
+        run: echo "version=1.0.$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: ./scripts/build-installer.ps1 -Version ${{ steps.ver.outputs.version }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: StickyDesk v${{ steps.ver.outputs.version }}
+          files: dist/StickyDeskSetup.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

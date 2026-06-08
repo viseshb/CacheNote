@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="StickyDesk_App.CalendarPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:conv="using:StickyDesk_App.Converters"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
+    xmlns:vm="using:StickyDesk.Core.ViewModels"
+    Background="Transparent"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:BoolToSelectionBrushConverter x:Key="SelBrush" />
+        <conv:HexToBrushConverter x:Key="HexToBrush" />
+        <Style x:Key="DayCell" TargetType="Button">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="2" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+        <Style x:Key="NavIcon" TargetType="Button">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+        <Style x:Key="RowIcon" TargetType="Button">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+    </Page.Resources>
+
+    <Grid Padding="20,12,20,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,8">
+            <Button
+                HorizontalAlignment="Left"
+                Padding="10,6"
+                AutomationProperties.AutomationId="BackToHome"
+                AutomationProperties.Name="Back to home"
+                Background="Transparent"
+                BorderThickness="0"
+                Click="Back_Click"
+                ToolTipService.ToolTip="Home">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontSize="14" Glyph="&#xE72B;" />
+                    <TextBlock Text="Home" />
+                </StackPanel>
+            </Button>
+            <StackPanel
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Orientation="Horizontal"
+                Spacing="8">
+                <FontIcon FontSize="18" Foreground="#7C3AED" Glyph="&#xE787;" />
+                <TextBlock
+                    AutomationProperties.AutomationId="CalendarTitle"
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource AppTextPrimaryBrush}"
+                    Text="Calendar" />
+            </StackPanel>
+            <Button
+                x:Name="AddEventButton"
+                HorizontalAlignment="Right"
+                AutomationProperties.AutomationId="AddEventButton"
+                AutomationProperties.Name="Add event"
+                Click="AddEvent_Click"
+                Style="{StaticResource AccentButtonStyle}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontSize="14" Glyph="&#xE710;" />
+                    <TextBlock Text="Event" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Navigation toolbar -->
+        <Grid Grid.Row="1" Margin="0,0,0,10">
+            <StackPanel HorizontalAlignment="Left" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                <Button
+                    AutomationProperties.AutomationId="CalPrev"
+                    AutomationProperties.Name="Previous"
+                    Click="Prev_Click"
+                    Style="{StaticResource NavIcon}"
+                    ToolTipService.ToolTip="Previous">
+                    <FontIcon FontSize="14" Glyph="&#xE76B;" />
+                </Button>
+                <TextBlock
+                    MinWidth="150"
+                    HorizontalTextAlignment="Center"
+                    VerticalAlignment="Center"
+                    AutomationProperties.AutomationId="CalPeriod"
+                    FontSize="15"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource AppTextPrimaryBrush}"
+                    Text="{x:Bind Vm.PeriodLabel, Mode=OneWay}" />
+                <Button
+                    AutomationProperties.AutomationId="CalNext"
+                    AutomationProperties.Name="Next"
+                    Click="Next_Click"
+                    Style="{StaticResource NavIcon}"
+                    ToolTipService.ToolTip="Next">
+                    <FontIcon FontSize="14" Glyph="&#xE76C;" />
+                </Button>
+            </StackPanel>
+            <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button
+                    Padding="12,6"
+                    AutomationProperties.AutomationId="CalToday"
+                    Click="Today_Click"
+                    Content="Today" />
+                <ComboBox
+                    x:Name="ModeCombo"
+                    MinWidth="110"
+                    AutomationProperties.AutomationId="CalendarViewMode"
+                    SelectedIndex="0"
+                    SelectionChanged="Mode_Changed">
+                    <ComboBoxItem Content="Month" />
+                    <ComboBoxItem Content="Week" />
+                    <ComboBoxItem Content="Day" />
+                    <ComboBoxItem Content="Agenda" />
+                </ComboBox>
+            </StackPanel>
+        </Grid>
+
+        <!-- Weekday headers (grid views only) -->
+        <Grid Grid.Row="2" Margin="2,0,2,4" Visibility="{x:Bind Vm.ShowGrid, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" HorizontalAlignment="Center" FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="Sun" />
+            <TextBlock Grid.Column="1" HorizontalAlignment="Center" FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="Mon" />
+            <TextBlock Grid.Column="2" HorizontalAlignment="Center" FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="Tue" />
+            <TextBlock Grid.Column="3" HorizontalAlignment="Center" FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="Wed" />
+            <TextBlock Grid.Column="4" HorizontalAlignment="Center" FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="Thu" />
+            <TextBlock Grid.Column="5" HorizontalAlignment="Center" FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="Fri" />
+            <TextBlock Grid.Column="6" HorizontalAlignment="Center" FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="Sat" />
+        </Grid>
+
+        <!-- Main area: grid (Month/Week) OR list (Day/Agenda) -->
+        <Grid Grid.Row="3">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{x:Bind Vm.ShowGrid, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                <muxc:ItemsRepeater x:Name="CalendarGrid" AutomationProperties.AutomationId="CalendarGrid" ItemsSource="{x:Bind Vm.Days}">
+                    <muxc:ItemsRepeater.Layout>
+                        <muxc:UniformGridLayout
+                            ItemsStretch="Fill"
+                            MaximumRowsOrColumns="7"
+                            MinColumnSpacing="0"
+                            MinItemHeight="62"
+                            MinRowSpacing="0"
+                            Orientation="Horizontal" />
+                    </muxc:ItemsRepeater.Layout>
+                    <muxc:ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:CalendarDayViewModel">
+                            <Button
+                                AutomationProperties.Name="Day"
+                                Click="Day_Click"
+                                Style="{StaticResource DayCell}"
+                                Tag="{x:Bind}">
+                                <Grid>
+                                    <Border Background="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource SelBrush}}" CornerRadius="8" />
+                                    <Border
+                                        BorderBrush="{ThemeResource AppAccentBrush}"
+                                        BorderThickness="1.5"
+                                        CornerRadius="8"
+                                        Visibility="{x:Bind IsToday, Converter={StaticResource BoolToVis}}" />
+                                    <StackPanel Margin="7,6" Spacing="4">
+                                        <TextBlock
+                                            FontSize="13"
+                                            Foreground="{ThemeResource AppTextPrimaryBrush}"
+                                            Opacity="{x:Bind DayOpacity}"
+                                            Text="{x:Bind DayNumber}" />
+                                        <Border
+                                            Padding="5,0"
+                                            HorizontalAlignment="Left"
+                                            Background="{ThemeResource AppAccentBrush}"
+                                            CornerRadius="8"
+                                            Visibility="{x:Bind HasItems, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock FontSize="10" Foreground="White" Text="{x:Bind CountText}" />
+                                        </Border>
+                                    </StackPanel>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </muxc:ItemsRepeater.ItemTemplate>
+                </muxc:ItemsRepeater>
+            </ScrollViewer>
+
+            <!-- Day / Agenda list -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{x:Bind Vm.ShowList, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                <StackPanel Spacing="6">
+                    <TextBlock
+                        x:Name="ListEmpty"
+                        Margin="2,12,0,0"
+                        FontSize="12"
+                        Foreground="{ThemeResource AppTextSecondaryBrush}"
+                        Text="Nothing scheduled. Tap Event to add one."
+                        Visibility="Collapsed" />
+                    <muxc:ItemsRepeater
+                        x:Name="AgendaList"
+                        AutomationProperties.AutomationId="AgendaList"
+                        ItemsSource="{x:Bind Vm.ListItems}">
+                        <muxc:ItemsRepeater.Layout>
+                            <muxc:StackLayout Spacing="6" />
+                        </muxc:ItemsRepeater.Layout>
+                        <muxc:ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CalendarEntryViewModel">
+                                <Border
+                                    Padding="10,6"
+                                    Background="{ThemeResource AppSurfaceBrush}"
+                                    BorderBrush="{ThemeResource AppBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Opacity="{x:Bind Opacity}">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse Grid.Column="0" Width="10" Height="10" VerticalAlignment="Center" Fill="{x:Bind ColorHex, Converter={StaticResource HexToBrush}}" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="{x:Bind TimeText}" />
+                                            <TextBlock FontSize="10" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="{x:Bind DateText}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <TextBlock FontSize="13" Foreground="{ThemeResource AppTextPrimaryBrush}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock FontSize="11" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="{x:Bind Kind}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="3" VerticalAlignment="Center" AutomationProperties.Name="Join meeting" Click="Join_Click" Style="{StaticResource RowIcon}" Tag="{x:Bind MeetingUrl}" ToolTipService.ToolTip="Join meeting" Visibility="{x:Bind HasMeeting, Converter={StaticResource BoolToVis}}">
+                                            <FontIcon FontSize="14" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xE8AF;" />
+                                        </Button>
+                                        <Button Grid.Column="4" VerticalAlignment="Center" AutomationProperties.Name="Edit event" Click="EditEvent_Click" Style="{StaticResource RowIcon}" Tag="{x:Bind EventId}" ToolTipService.ToolTip="Edit event" Visibility="{x:Bind IsEvent, Converter={StaticResource BoolToVis}}">
+                                            <FontIcon FontSize="14" Glyph="&#xE70F;" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </muxc:ItemsRepeater.ItemTemplate>
+                    </muxc:ItemsRepeater>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- Selected-day agenda (grid views only) -->
+        <StackPanel Grid.Row="4" Margin="0,12,0,0" Spacing="6" Visibility="{x:Bind Vm.ShowGrid, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+            <TextBlock
+                AutomationProperties.AutomationId="CalSelectedDay"
+                FontSize="14"
+                FontWeight="SemiBold"
+                Foreground="{ThemeResource AppTextPrimaryBrush}"
+                Text="{x:Bind Vm.SelectedDayLabel, Mode=OneWay}" />
+            <TextBlock
+                x:Name="AgendaEmpty"
+                FontSize="12"
+                Foreground="{ThemeResource AppTextSecondaryBrush}"
+                Text="Nothing scheduled."
+                Visibility="Collapsed" />
+            <ScrollViewer MaxHeight="170" VerticalScrollBarVisibility="Auto">
+                <muxc:ItemsRepeater ItemsSource="{x:Bind Vm.SelectedDayItems}">
+                    <muxc:ItemsRepeater.Layout>
+                        <muxc:StackLayout Spacing="6" />
+                    </muxc:ItemsRepeater.Layout>
+                    <muxc:ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:CalendarEntryViewModel">
+                            <Border
+                                Padding="10,6"
+                                Background="{ThemeResource AppSurfaceBrush}"
+                                BorderBrush="{ThemeResource AppBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Opacity="{x:Bind Opacity}">
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Ellipse Grid.Column="0" Width="10" Height="10" VerticalAlignment="Center" Fill="{x:Bind ColorHex, Converter={StaticResource HexToBrush}}" />
+                                    <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="{x:Bind TimeText}" />
+                                    <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="13" Foreground="{ThemeResource AppTextPrimaryBrush}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                                    <Button Grid.Column="3" VerticalAlignment="Center" AutomationProperties.Name="Join meeting" Click="Join_Click" Style="{StaticResource RowIcon}" Tag="{x:Bind MeetingUrl}" ToolTipService.ToolTip="Join meeting" Visibility="{x:Bind HasMeeting, Converter={StaticResource BoolToVis}}">
+                                        <FontIcon FontSize="14" Foreground="{ThemeResource AppAccentBrush}" Glyph="&#xE8AF;" />
+                                    </Button>
+                                    <Button Grid.Column="4" VerticalAlignment="Center" AutomationProperties.Name="Edit event" Click="EditEvent_Click" Style="{StaticResource RowIcon}" Tag="{x:Bind EventId}" ToolTipService.ToolTip="Edit event" Visibility="{x:Bind IsEvent, Converter={StaticResource BoolToVis}}">
+                                        <FontIcon FontSize="14" Glyph="&#xE70F;" />
+                                    </Button>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </muxc:ItemsRepeater.ItemTemplate>
+                </muxc:ItemsRepeater>
+            </ScrollViewer>
+        </StackPanel>
+    </Grid>
+</Page>

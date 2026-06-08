@@ -1,0 +1,26 @@
+# Secrets
+.env
+.env.local
+
+# Build output
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+[Dd]ist/
+*.user
+
+# Test / run artifacts
+artifacts/
+colordiag.txt
+*.bak
+
+# StickyDesk runtime data (must never be committed)
+data/
+attachments/
+logs/
+config/
+.portable
+
+# IDE
+.vs/
+*.suo
