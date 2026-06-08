@@ -72,6 +72,13 @@
     <ProjectReference Include="..\StickyDesk.Core\StickyDesk.Core.csproj" />
   </ItemGroup>
 
+  <!-- DEBUG ONLY: copy the developer's .env (solution root) next to the dev exe so the
+       running build picks up real keys. NEVER do this for Release/publish — that would
+       bundle the secrets into the distributed installer. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug' And Exists('..\.env')">
+    <None Include="..\.env" Link=".env" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!--
     Defining the "HasPackageAndPublishMenuAddedByProject" property here allows the Solution
     Explorer "Package and Publish" context menu entry to be enabled for this project even if

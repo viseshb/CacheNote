@@ -195,6 +195,27 @@ public sealed partial class MainPage : Page
         ApplyCompactPane();
     }
 
+    /// <summary>{} tool: insert a monospace code block right at the caret, inside the note body.</summary>
+    private void InsertCodeBlock_Click(object sender, RoutedEventArgs e)
+    {
+        var doc = EditorBox.Document;
+        var sel = doc.Selection;
+        if (sel is null)
+            return;
+
+        sel.TypeText("\r");                 // start the code block on its own line
+        var start = sel.EndPosition;
+        sel.TypeText("code here");          // placeholder, left selected so the user types over it
+        var end = sel.EndPosition;
+
+        var range = doc.GetRange(start, end);
+        range.CharacterFormat.Name = "Consolas";
+
+        sel.SetRange(start, end);
+        EditorBox.Focus(FocusState.Programmatic);
+        OnContentChanged(this, null!);
+    }
+
     // ----- Markdown blocks ({} tool): monospace md source + a rendered Preview -----
     private void DeleteMdBlock_Click(object sender, RoutedEventArgs e)
     {
