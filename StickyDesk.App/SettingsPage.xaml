@@ -288,6 +288,34 @@
                     </Border>
                 </StackPanel>
 
+                <!-- Calendar sync -->
+                <StackPanel Spacing="6">
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="CALENDAR SYNC" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel Spacing="8">
+                            <TextBlock
+                                FontSize="12"
+                                Foreground="{ThemeResource AppTextSecondaryBrush}"
+                                Text="Sync events with Google Calendar. Add a Google Cloud OAuth 2.0 Desktop client (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) to .env, then connect."
+                                TextWrapping="Wrap" />
+                            <Button
+                                x:Name="GoogleConnectBtn"
+                                AutomationProperties.AutomationId="GoogleConnectButton"
+                                Click="GoogleConnect_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon FontSize="14" Glyph="&#xE787;" />
+                                    <TextBlock Text="Connect Google Calendar" />
+                                </StackPanel>
+                            </Button>
+                            <TextBlock
+                                x:Name="GoogleSyncStatus"
+                                FontSize="12"
+                                Foreground="{ThemeResource AppTextSecondaryBrush}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
                 <!-- Storage / portability -->
                 <StackPanel Spacing="6">
                     <TextBlock Style="{StaticResource SectionTitle}" Text="STORAGE" />

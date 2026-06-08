@@ -63,6 +63,9 @@ public sealed partial class SettingsPage : Page
         AssemblyKeyText.Text = CloudConfig.Mask(cfg.AssemblyAiKey);
         AiProviderText.Text = cfg.AiProvider;
         GeminiKeyText.Text = CloudConfig.Mask(string.IsNullOrEmpty(cfg.VertexKey) ? cfg.GeminiKey : cfg.VertexKey);
+        GoogleSyncStatus.Text = cfg.GoogleSyncConfigured
+            ? "OAuth client found in .env — sign-in flow ships next."
+            : "Not configured. Add GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET to .env.";
 
         // Storage
         var paths = App.GetService<IAppPaths>();
@@ -149,6 +152,22 @@ public sealed partial class SettingsPage : Page
         {
             btn.IsEnabled = true;
         }
+    }
+
+    private async void GoogleConnect_Click(object sender, RoutedEventArgs e)
+    {
+        var cfg = App.GetService<CloudConfig>();
+        var msg = cfg.GoogleSyncConfigured
+            ? "A Google OAuth client was found in .env. The sign-in + two-way sync flow is scaffolded and ships in the next build."
+            : "To enable Google Calendar sync:\n\n1. In Google Cloud Console, enable the Calendar API and create an OAuth 2.0 \"Desktop app\" client.\n2. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the .env file in the app folder.\n3. Restart StickyDesk and connect.";
+        var dlg = new ContentDialog
+        {
+            Title = "Google Calendar sync",
+            Content = msg,
+            CloseButtonText = "OK",
+            XamlRoot = XamlRoot,
+        };
+        await dlg.ShowAsync();
     }
 
     private void Back_Click(object sender, RoutedEventArgs e)

@@ -42,6 +42,11 @@ public sealed class CloudConfig
     public string GithubOwner => Get("GITHUB_OWNER");
     public string GithubRepo => Get("GITHUB_REPO");
 
+    // ----- Google Calendar sync (V2; needs a Google Cloud OAuth Desktop client) -----
+    public string GoogleClientId => Get("GOOGLE_CLIENT_ID");
+    public string GoogleClientSecret => Get("GOOGLE_CLIENT_SECRET");
+    public bool GoogleSyncConfigured => !string.IsNullOrWhiteSpace(GoogleClientId);
+
     /// <summary>vertex | gemini | fake — explicit override, else inferred from which key is present.</summary>
     public string AiProvider
     {
