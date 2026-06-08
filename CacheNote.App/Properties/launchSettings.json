@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "CacheNote.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "CacheNote.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

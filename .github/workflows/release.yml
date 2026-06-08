@@ -36,7 +36,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
-          name: StickyDesk v${{ steps.ver.outputs.version }}
-          files: dist/StickyDeskSetup.exe
+          name: CacheNote v${{ steps.ver.outputs.version }}
+          files: dist/CacheNoteSetup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

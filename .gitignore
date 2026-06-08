@@ -14,8 +14,8 @@ artifacts/
 colordiag.txt
 *.bak
 
-# StickyDesk runtime data (must never be committed). ANCHORED to repo root with a leading "/"
-# so they do NOT also match source folders like StickyDesk.Core/Data — git is case-insensitive
+# CacheNote runtime data (must never be committed). ANCHORED to repo root with a leading "/"
+# so they do NOT also match source folders like CacheNote.Core/Data — git is case-insensitive
 # on Windows, so an unanchored "data/" was excluding the entire Core/Data source tree.
 /data/
 /attachments/

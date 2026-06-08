@@ -1,4 +1,4 @@
-# Build StickyDeskSetup.exe: self-contained publish, then compile the Inno Setup script.
+# Build CacheNoteSetup.exe: self-contained publish, then compile the Inno Setup script.
 # Usage:  pwsh scripts\build-installer.ps1 [-Version 1.0.0]
 param(
     [string]$Version = "1.0.0",
@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $publishDir = Join-Path $root "publish\$Rid"
-$app = Join-Path $root "StickyDesk.App\StickyDesk.App.csproj"
+$app = Join-Path $root "CacheNote.App\CacheNote.App.csproj"
 
 Write-Host "==> Publishing $Rid (self-contained) ..." -ForegroundColor Cyan
 if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
@@ -26,7 +26,7 @@ if (-not $iscc) { $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).S
 if (-not $iscc) { throw "ISCC.exe (Inno Setup 6) not found." }
 
 Write-Host "==> Compiling installer with $iscc ..." -ForegroundColor Cyan
-& $iscc "/DMyAppVersion=$Version" (Join-Path $root "installer\StickyDesk.iss")
+& $iscc "/DMyAppVersion=$Version" (Join-Path $root "installer\CacheNote.iss")
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
 
 Write-Host "==> Done. Output in $(Join-Path $root 'dist')" -ForegroundColor Green

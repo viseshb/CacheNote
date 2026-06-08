@@ -1,4 +1,4 @@
-# StickyDesk - Product Requirements Document (PRD)
+# CacheNote - Product Requirements Document (PRD)
 
 Version: 1.0
 
@@ -10,7 +10,7 @@ Project Type: Premium Desktop Productivity Application
 
 # Product Vision
 
-Build a premium desktop notes and reminders application called **StickyDesk**.
+Build a premium desktop notes and reminders application called **CacheNote**.
 
 The application combines:
 
@@ -19,7 +19,7 @@ The application combines:
 * Modern productivity workflows
 * Native Windows 11 design language
 
-StickyDesk should feel like a polished commercial application rather than a student project.
+CacheNote should feel like a polished commercial application rather than a student project.
 
 The application must be:
 
@@ -30,7 +30,7 @@ The application must be:
 * Native-feeling
 * Offline-first
 
-Users should be able to keep StickyDesk open all day without it feeling intrusive or consuming significant system resources.
+Users should be able to keep CacheNote open all day without it feeling intrusive or consuming significant system resources.
 
 ---
 
@@ -106,12 +106,12 @@ Reason:
 
 ## Local Data Structure
 
-StickyDesk/
+CacheNote/
 
-├── StickyDesk.exe
+├── CacheNote.exe
 
 ├── data/
-│   └── stickydesk.db
+│   └── CacheNote.db
 
 ├── attachments/
 │   ├── image1.png
@@ -303,7 +303,7 @@ Window snaps to screen edge and remains accessible while working.
 
 Settings option:
 
-Launch StickyDesk when Windows starts.
+Launch CacheNote when Windows starts.
 
 Requirements:
 
@@ -329,7 +329,7 @@ Do not exit.
 
 Options:
 
-* Open StickyDesk
+* Open CacheNote
 * New Note
 * New Task
 * Toggle Always On Top
@@ -672,7 +672,7 @@ Immediate
 
 Generate:
 
-StickyDeskSetup.exe
+CacheNoteSetup.exe
 
 Installer must:
 

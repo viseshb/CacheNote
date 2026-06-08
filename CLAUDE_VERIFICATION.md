@@ -1,6 +1,6 @@
 # Claude Integration Verification Log
 
-Project: StickyDesk
+Project: CacheNote
 
 Verifier: Codex
 
@@ -15,7 +15,7 @@ Status: Watching for implementation changes. Current source is much newer than t
 Latest baseline:
 
 - Workspace path: `e:\Todo_List`
-- Current files: `PRD.md`, `CLAUDE_VERIFICATION.md`, `StickyDesk.sln`, `StickyDesk.App`, `StickyDesk.Core`, `StickyDesk.Tests`, `StickyDesk.UiTests`, `.env.example`, `.env`, `.gitignore`
+- Current files: `PRD.md`, `CLAUDE_VERIFICATION.md`, `CacheNote.sln`, `CacheNote.App`, `CacheNote.Core`, `CacheNote.Tests`, `CacheNote.UiTests`, `.env.example`, `.env`, `.gitignore`
 - Git status: not a git repository at baseline.
 - Build status: passing for `Debug|x64` as of 2026-06-07 17:07.
 - Test status: unit tests pass 13 tests; current x64 `FullWalkthrough` UI test fails.
@@ -27,9 +27,9 @@ Latest baseline:
 ### Open
 
 1. Current full UI walkthrough fails on the rebuilt x64 app.
-   - Evidence: `dotnet build StickyDesk.sln -c Debug -p:Platform=x64` passes with 0 warnings/errors.
-   - Evidence: `dotnet test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore` passes 13 tests.
-   - Evidence: `STICKYDESK_EXE=...\bin\x64\Debug\...\StickyDesk.App.exe; dotnet test StickyDesk.UiTests\StickyDesk.UiTests.csproj -c Debug --no-restore --filter FullWalkthrough` fails.
+   - Evidence: `dotnet build CacheNote.sln -c Debug -p:Platform=x64` passes with 0 warnings/errors.
+   - Evidence: `dotnet test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore` passes 13 tests.
+   - Evidence: `CacheNote_EXE=...\bin\x64\Debug\...\CacheNote.App.exe; dotnet test CacheNote.UiTests\CacheNote.UiTests.csproj -c Debug --no-restore --filter FullWalkthrough` fails.
    - Current failure set in `artifacts/walkthrough-results.txt`: `Numbered toggles ON`, headings, font family, font size, color picker, checklist, list actions, list toggle, theme toggle, update button, and back-home steps fail with `NullReferenceException`.
    - Risk: the app has many green lower-level checks, but the end-to-end interactive notes workflow is not proven and cannot be used as a milestone gate.
    - Expected: fix the walkthrough/test-targeting failures or the underlying automation/accessibility gaps, rerun against the exact x64 exe, and only then treat M1b/M2/M3 UI work as gate-ready.
@@ -43,7 +43,7 @@ Latest baseline:
 3. Reminder implementation is not fully gate-verified.
    - Evidence: `MainWindow.xaml.cs` now starts a `DispatcherQueueTimer` every 20 seconds, calls `IReminderService.GetDueAndAdvance(DateTime.UtcNow)`, and calls `ToastService.ShowReminder`.
    - Evidence: unit tests cover reminder math, due/advance, snooze, complete, and SQLite round-trips.
-   - Evidence: `StickyDesk.UiTests/M3_RemindersSmoke.cs` exists for create/complete/delete UI flow, but it clears persisted reminders and has not been run by verifier while the user-visible app is open.
+   - Evidence: `CacheNote.UiTests/M3_RemindersSmoke.cs` exists for create/complete/delete UI flow, but it clears persisted reminders and has not been run by verifier while the user-visible app is open.
    - Missing evidence: no current live run or UI smoke proves "set reminder +1 min, app in tray, toast appears, Open/Complete/Snooze actions work" from the plan's M3 gate.
    - Risk: reminder math can be correct while the shell toast identity/action path, tray state, and UI refresh path still fail.
    - Expected: add/run a focused M3 reminder UI/live verification and capture valid artifacts/logs before marking reminders done.
@@ -60,16 +60,16 @@ Latest baseline:
 
 5. Plan marks M0 as done even though some M0 gate evidence is still incomplete.
    - Evidence: plan line 9 says "M0 is complete and approved"; plan line 98 says `M0 ✅ DONE`.
-   - Missing/weak verifier evidence: no explicit user "good" gate recorded in this verifier log; no proof of toast action button activation; output executable is still `StickyDesk.App.exe` rather than the plan/PRD `StickyDesk.exe`; screenshot framing is not clean.
+   - Missing/weak verifier evidence: no explicit user "good" gate recorded in this verifier log; no proof of toast action button activation; output executable is still `CacheNote.App.exe` rather than the plan/PRD `CacheNote.exe`; screenshot framing is not clean.
    - Expected: either downgrade the plan label from DONE to "build/test/publish green, pending review" or provide the missing gate evidence.
 
 6. Planned cloud/STT/AI implementation placement risks breaking the Core architecture boundary.
-   - Evidence: plan "New components" puts `CloudConfig`, `DeepgramSttService`, `AssemblyAiSttService`, `GeminiClient`, and `AiActionExecutor` under `StickyDesk.Core`.
-   - Risk: `StickyDesk.Core` becomes coupled to external IO, provider SDKs/WebSockets, API keys, `.env` loading, and cloud failure modes.
-   - Expected: keep `StickyDesk.Core` to domain models, repository contracts, service interfaces, DTOs, validation, and provider-neutral abstractions. Put DotNetEnv loading, `HttpClient`, `ClientWebSocket`, Deepgram/AssemblyAI implementations, Gemini/Vertex client code, and NAudio capture in `StickyDesk.App` or a dedicated infrastructure/adapters project wired by the app composition root.
+   - Evidence: plan "New components" puts `CloudConfig`, `DeepgramSttService`, `AssemblyAiSttService`, `GeminiClient`, and `AiActionExecutor` under `CacheNote.Core`.
+   - Risk: `CacheNote.Core` becomes coupled to external IO, provider SDKs/WebSockets, API keys, `.env` loading, and cloud failure modes.
+   - Expected: keep `CacheNote.Core` to domain models, repository contracts, service interfaces, DTOs, validation, and provider-neutral abstractions. Put DotNetEnv loading, `HttpClient`, `ClientWebSocket`, Deepgram/AssemblyAI implementations, Gemini/Vertex client code, and NAudio capture in `CacheNote.App` or a dedicated infrastructure/adapters project wired by the app composition root.
 
 7. Secrets/config ownership needs a cleaner architecture before M5/M8 land.
-   - Evidence: plan says `.env` lives at app root, Settings UI edits API keys, and `StickyDesk.Core/Cloud/CloudConfig.cs` loads/masks provider keys.
+   - Evidence: plan says `.env` lives at app root, Settings UI edits API keys, and `CacheNote.Core/Cloud/CloudConfig.cs` loads/masks provider keys.
    - Risk: plaintext keys and redaction logic can leak into core/domain services and logs; portable `.env` conflicts with any later DPAPI encryption unless the boundary is designed now.
    - Expected: one app-level settings/secrets service owns key loading, masking, persistence, and validation. Core receives only typed options or capability flags. Missing keys/network should disable only voice/AI affordances, not app startup or local note/task/reminder flows.
 
@@ -84,7 +84,7 @@ Latest baseline:
    - Expected: define a provider-neutral streaming session contract with start/stop/cancel, partial/final/error/completed states, cancellation tokens, and deterministic cleanup. Tests should mock provider events and verify the editor consumes provider partial/final/end-of-turn events without custom NLP/ML cleanup.
 
 10. Plan milestone numbering and references need cleanup after inserting new milestones.
-   - Evidence: the earlier plan used M7 for settings and installer; current plan now has M9 installer, but solution structure text still says `installer/StickyDesk.iss # ... added at M7`.
+   - Evidence: the earlier plan used M7 for settings and installer; current plan now has M9 installer, but solution structure text still says `installer/CacheNote.iss # ... added at M7`.
    - Evidence: locked global hotkey decision still says configurable in M6, but settings moved to M7.
    - Risk: implementation may follow stale milestone references and land features in the wrong phase.
    - Expected: renumber references consistently after adding M5/M8, or avoid adding cloud milestones unless approved.
@@ -107,12 +107,12 @@ Latest baseline:
    - Expected: either commit the full locked packaging properties or document why publish-time properties are the chosen source of truth.
 
 14. Source still contains template/stale app identity.
-   - Evidence: app namespace/root namespace is still `StickyDesk_App`; executable is `StickyDesk.App.exe`; `app.manifest`, `Package.appxmanifest`, and launch settings still use `StickyDesk.App`; `MainWindow.xaml.cs` still has WinUI template commentary.
+   - Evidence: app namespace/root namespace is still `CacheNote_App`; executable is `CacheNote.App.exe`; `app.manifest`, `Package.appxmanifest`, and launch settings still use `CacheNote.App`; `MainWindow.xaml.cs` still has WinUI template commentary.
    - Risk: template namespaces/titles can leak into app identity, notification identity, and installer/AUMID work.
-   - Expected: use a clean `StickyDesk.App` namespace/identity, produce `StickyDesk.exe` for the final app folder, and remove template commentary before the milestone gate.
+   - Expected: use a clean `CacheNote.App` namespace/identity, produce `CacheNote.exe` for the final app folder, and remove template commentary before the milestone gate.
 
 15. UI smoke helper has stale-binary risk.
-   - Evidence: `TestApp.FindExe()` searches `StickyDesk.App/bin` recursively for the newest `StickyDesk.App.exe`.
+   - Evidence: `TestApp.FindExe()` searches `CacheNote.App/bin` recursively for the newest `CacheNote.App.exe`.
    - Risk: if the app build fails, the smoke can launch an older executable and produce a false pass.
    - Expected: make the UI smoke depend on a successful fresh app build or validate the selected exe timestamp/build marker.
 
@@ -124,23 +124,23 @@ Latest baseline:
 ### Closed / Passing
 
 1. Solution skeleton builds successfully.
-   - Command: `C:\Program Files\dotnet\dotnet.exe build StickyDesk.sln -c Debug -p:Platform=x64`
+   - Command: `C:\Program Files\dotnet\dotnet.exe build CacheNote.sln -c Debug -p:Platform=x64`
    - Result: passed, 0 warnings, 0 errors.
 
 2. Placeholder test projects execute.
-   - Command: `dotnet test StickyDesk.Tests --no-build`
+   - Command: `dotnet test CacheNote.Tests --no-build`
    - Result: passed, 1 placeholder test.
-   - Command: `dotnet test StickyDesk.UiTests --no-build`
+   - Command: `dotnet test CacheNote.UiTests --no-build`
    - Result: passed, 1 placeholder test.
 
 3. Initial dependency wiring landed.
-   - `StickyDesk.Core` now references `CommunityToolkit.Mvvm`, `Dapper`, `Microsoft.Data.Sqlite`, and Microsoft dependency/logging abstractions.
-   - `StickyDesk.App` now references `Microsoft.Extensions.Hosting`.
-   - `StickyDesk.UiTests` now references `FlaUI.UIA3`.
+   - `CacheNote.Core` now references `CommunityToolkit.Mvvm`, `Dapper`, `Microsoft.Data.Sqlite`, and Microsoft dependency/logging abstractions.
+   - `CacheNote.App` now references `Microsoft.Extensions.Hosting`.
+   - `CacheNote.UiTests` now references `FlaUI.UIA3`.
    - This is directionally aligned with the plan, but source code still does not use these dependencies yet.
 
 4. Theme resource dictionary added.
-   - `StickyDesk.App/Themes/ThemeResources.xaml` now exists.
+   - `CacheNote.App/Themes/ThemeResources.xaml` now exists.
    - It defines the PRD light/dark color tokens plus high-contrast system-color brushes.
    - This closes the earlier missing-resource concern, pending full XAML build/run after the Core compile error is fixed.
 
@@ -149,28 +149,28 @@ Latest baseline:
    - Full solution build passes with 0 warnings and 0 errors.
 
 6. Unit test placeholders replaced with meaningful tests.
-   - `StickyDesk.Tests/AppPathsTests.cs` verifies app-root paths and directory creation.
-   - `StickyDesk.Tests/MigrationsTests.cs` verifies schema creation, migration idempotence, and FTS trigger sync.
-   - `dotnet test StickyDesk.Tests` passes 5 tests.
+   - `CacheNote.Tests/AppPathsTests.cs` verifies app-root paths and directory creation.
+   - `CacheNote.Tests/MigrationsTests.cs` verifies schema creation, migration idempotence, and FTS trigger sync.
+   - `dotnet test CacheNote.Tests` passes 5 tests.
 
 7. M0 UI smoke now passes.
-   - `dotnet test StickyDesk.UiTests --filter M0_FoundationSmoke` passes 1 test.
+   - `dotnet test CacheNote.UiTests --filter M0_FoundationSmoke` passes 1 test.
    - Screenshot artifact created at `artifacts/m0-foundation.png`.
 
 8. Self-contained unpackaged publish succeeds.
-   - Command: `dotnet publish StickyDesk.App\StickyDesk.App.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true`
-   - Output: `StickyDesk.App\bin\Release\net9.0-windows10.0.26100.0\win-x64\publish`
-   - Output contains `StickyDesk.App.exe`, .NET runtime files, SQLite native dependency, and Windows App SDK runtime files.
+   - Command: `dotnet publish CacheNote.App\CacheNote.App.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true`
+   - Output: `CacheNote.App\bin\Release\net9.0-windows10.0.26100.0\win-x64\publish`
+   - Output contains `CacheNote.App.exe`, .NET runtime files, SQLite native dependency, and Windows App SDK runtime files.
 
 9. M1a x64 build blocker from `TitleBar.Footer` is fixed.
-   - Command: `dotnet build StickyDesk.sln -c Debug -p:Platform=x64`
+   - Command: `dotnet build CacheNote.sln -c Debug -p:Platform=x64`
    - Result: passed, 0 warnings, 0 errors as of 2026-06-07 13:16.
-   - Remaining gate issue: screenshots from the M1 UI smoke are invalid and do not show StickyDesk.
+   - Remaining gate issue: screenshots from the M1 UI smoke are invalid and do not show CacheNote.
 
 10. Current 5 PM source batch builds and unit-tests green.
-   - Command: `dotnet build StickyDesk.sln -c Debug -p:Platform=x64`
+   - Command: `dotnet build CacheNote.sln -c Debug -p:Platform=x64`
    - Result: passed, 0 warnings, 0 errors as of 2026-06-07 17:07.
-   - Command: `dotnet test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore`
+   - Command: `dotnet test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore`
    - Result: passed, 13 tests.
    - Scope note: full UI walkthrough still fails and remains an open finding.
 
@@ -191,8 +191,8 @@ Assessment:
 
 Next checks:
 
-- Watch for `StickyDesk.sln`.
-- Watch for `StickyDesk.App`, `StickyDesk.Core`, `StickyDesk.Tests`, and `StickyDesk.UiTests`.
+- Watch for `CacheNote.sln`.
+- Watch for `CacheNote.App`, `CacheNote.Core`, `CacheNote.Tests`, and `CacheNote.UiTests`.
 - When projects appear, run restore/build/test using `C:\Program Files\dotnet\dotnet.exe` until PATH refreshes.
 - Check for PRD-critical wiring: app-root data paths, unpackaged/self-contained settings, MVVM/DI setup, SQLite migrations, notification spike, and no stale scaffold/demo code.
 
@@ -200,17 +200,17 @@ Next checks:
 
 Observed:
 
-- Claude created `StickyDesk.sln`.
-- Projects appeared: `StickyDesk.App`, `StickyDesk.Core`, `StickyDesk.Tests`, `StickyDesk.UiTests`.
+- Claude created `CacheNote.sln`.
+- Projects appeared: `CacheNote.App`, `CacheNote.Core`, `CacheNote.Tests`, `CacheNote.UiTests`.
 - The first app shape is still close to the WinUI template: `MainWindow`, `MainPage`, default assets, packaged manifest, and template comments.
 
 Verification:
 
-- Build command: `C:\Program Files\dotnet\dotnet.exe build StickyDesk.sln -c Debug -p:Platform=x64`
+- Build command: `C:\Program Files\dotnet\dotnet.exe build CacheNote.sln -c Debug -p:Platform=x64`
 - Build result: passed with 0 warnings and 0 errors.
-- Unit test command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-build`
+- Unit test command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-build`
 - Unit test result: passed, but only 1 empty placeholder test.
-- UI test command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.UiTests\StickyDesk.UiTests.csproj -c Debug --no-build`
+- UI test command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.UiTests\CacheNote.UiTests.csproj -c Debug --no-build`
 - UI test result: passed, but only 1 empty placeholder test.
 
 Assessment:
@@ -234,13 +234,13 @@ Assessment:
 
 Observed:
 
-- `StickyDesk.App/StickyDesk.App.csproj` changed to add `Microsoft.Extensions.Hosting`.
-- `StickyDesk.Core/StickyDesk.Core.csproj` changed to add `CommunityToolkit.Mvvm`, `Dapper`, `Microsoft.Data.Sqlite`, and Microsoft dependency/logging abstractions.
-- `StickyDesk.UiTests/StickyDesk.UiTests.csproj` changed to add `FlaUI.UIA3`.
+- `CacheNote.App/CacheNote.App.csproj` changed to add `Microsoft.Extensions.Hosting`.
+- `CacheNote.Core/CacheNote.Core.csproj` changed to add `CommunityToolkit.Mvvm`, `Dapper`, `Microsoft.Data.Sqlite`, and Microsoft dependency/logging abstractions.
+- `CacheNote.UiTests/CacheNote.UiTests.csproj` changed to add `FlaUI.UIA3`.
 
 Verification:
 
-- Build command: `C:\Program Files\dotnet\dotnet.exe build StickyDesk.sln -c Debug -p:Platform=x64`
+- Build command: `C:\Program Files\dotnet\dotnet.exe build CacheNote.sln -c Debug -p:Platform=x64`
 - Build result: passed, but with 4 `NU1701` warnings for `FlaUI.Core` / `FlaUI.UIA3` compatibility with `net9.0`.
 - Unit test command was retried sequentially after a verifier-caused file lock from parallel build/test execution.
 - Sequential unit test result: passed, 1 placeholder test.
@@ -256,29 +256,29 @@ Assessment:
 
 Observed:
 
-- Added `StickyDesk.Core/Infrastructure/AppPaths.cs`.
-- Added `StickyDesk.Core/Data/SqliteConnectionFactory.cs`.
-- Added `StickyDesk.Core/Data/Migrations/SchemaV1.cs`.
-- Added `StickyDesk.Core/Data/Migrations/MigrationRunner.cs`.
-- Added `StickyDesk.Core/Services/SettingsService.cs`.
-- Added `StickyDesk.Core/Logging/FileLogger.cs`.
-- Added `StickyDesk.Core/DependencyInjection/CoreServiceCollectionExtensions.cs`.
-- Added `StickyDesk.App/Services/ToastService.cs`.
-- Updated `StickyDesk.App/App.xaml.cs` to build a Generic Host, register core services, run migrations on launch, register toasts, and log startup.
+- Added `CacheNote.Core/Infrastructure/AppPaths.cs`.
+- Added `CacheNote.Core/Data/SqliteConnectionFactory.cs`.
+- Added `CacheNote.Core/Data/Migrations/SchemaV1.cs`.
+- Added `CacheNote.Core/Data/Migrations/MigrationRunner.cs`.
+- Added `CacheNote.Core/Services/SettingsService.cs`.
+- Added `CacheNote.Core/Logging/FileLogger.cs`.
+- Added `CacheNote.Core/DependencyInjection/CoreServiceCollectionExtensions.cs`.
+- Added `CacheNote.App/Services/ToastService.cs`.
+- Updated `CacheNote.App/App.xaml.cs` to build a Generic Host, register core services, run migrations on launch, register toasts, and log startup.
 
 Positive notes:
 
 - `AppPaths` enforces app-root folders: `data`, `attachments`, `config`, `logs`.
-- SQLite connection factory uses app-root `data/stickydesk.db`, WAL, foreign keys, and busy timeout.
+- SQLite connection factory uses app-root `data/CacheNote.db`, WAL, foreign keys, and busy timeout.
 - Schema includes the main PRD tables and FTS5 trigger setup for notes.
 - Generic Host/DI direction is now real instead of just a package reference.
 
 Verification:
 
-- Build command: `C:\Program Files\dotnet\dotnet.exe build StickyDesk.sln -c Debug -p:Platform=x64`
+- Build command: `C:\Program Files\dotnet\dotnet.exe build CacheNote.sln -c Debug -p:Platform=x64`
 - Build result: failed.
-- Error: `StickyDesk.Core/Logging/FileLogger.cs(87,17): error CS1061: 'ILoggingBuilder' does not contain a definition for 'AddProvider'`.
-- Unit tests cannot build because `StickyDesk.Core` fails.
+- Error: `CacheNote.Core/Logging/FileLogger.cs(87,17): error CS1061: 'ILoggingBuilder' does not contain a definition for 'AddProvider'`.
+- Unit tests cannot build because `CacheNote.Core` fails.
 - UI tests still pass only their placeholder test because they do not reference the broken Core project.
 
 Assessment:
@@ -291,15 +291,15 @@ Assessment:
 
 Observed:
 
-- `StickyDesk.App/MainPage.xaml` now renders a centered M0 foundation status page.
+- `CacheNote.App/MainPage.xaml` now renders a centered M0 foundation status page.
 - The page shows mode, data folder, database schema/table count, and a "Test notification" button.
-- `StickyDesk.App/MainPage.xaml.cs` resolves `ToastService`, `IAppPaths`, and `MigrationRunner` from the app host.
+- `CacheNote.App/MainPage.xaml.cs` resolves `ToastService`, `IAppPaths`, and `MigrationRunner` from the app host.
 - `TestToastButton_Click` calls `_toasts.ShowSpikeToast()`.
 
 Verification:
 
-- Build command repeated: `C:\Program Files\dotnet\dotnet.exe build StickyDesk.sln -c Debug -p:Platform=x64`
-- Build result: still failed on `StickyDesk.Core/Logging/FileLogger.cs(87,17)` before XAML verification could complete.
+- Build command repeated: `C:\Program Files\dotnet\dotnet.exe build CacheNote.sln -c Debug -p:Platform=x64`
+- Build result: still failed on `CacheNote.Core/Logging/FileLogger.cs(87,17)` before XAML verification could complete.
 
 Assessment:
 
@@ -311,27 +311,27 @@ Assessment:
 
 Observed:
 
-- Added `StickyDesk.UiTests/TestApp.cs`.
-- Added `StickyDesk.UiTests/M0_FoundationSmoke.cs`.
-- The smoke test attempts to find `StickyDesk.App.exe`, launch it through FlaUI, assert the main window title contains `StickyDesk`, and save `artifacts/m0-foundation.png`.
+- Added `CacheNote.UiTests/TestApp.cs`.
+- Added `CacheNote.UiTests/M0_FoundationSmoke.cs`.
+- The smoke test attempts to find `CacheNote.App.exe`, launch it through FlaUI, assert the main window title contains `CacheNote`, and save `artifacts/m0-foundation.png`.
 
 Verification:
 
-- Command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.UiTests\StickyDesk.UiTests.csproj -c Debug --no-restore --filter M0_FoundationSmoke`
+- Command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.UiTests\CacheNote.UiTests.csproj -c Debug --no-restore --filter M0_FoundationSmoke`
 - Result: failed before launching the app.
 - Error: `Could not load file or assembly 'Accessibility, Version=4.0.0.0'`.
 
 Assessment:
 
 - This confirms the `FlaUI.UIA3` / `net9.0` compatibility warnings are a real blocker, not just noise.
-- The smoke helper may also be vulnerable to stale binaries because it searches `StickyDesk.App/bin` for the newest `StickyDesk.App.exe`; this must be paired with a successful fresh app build before the UI result can be trusted.
-- At this point in time the solution still failed earlier in `StickyDesk.Core`, so no M0 UI gate was valid yet. Later entries supersede this status.
+- The smoke helper may also be vulnerable to stale binaries because it searches `CacheNote.App/bin` for the newest `CacheNote.App.exe`; this must be paired with a successful fresh app build before the UI result can be trusted.
+- At this point in time the solution still failed earlier in `CacheNote.Core`, so no M0 UI gate was valid yet. Later entries supersede this status.
 
 ### 2026-06-07 12:11:30 -05:00 - Theme Dictionary Found
 
 Observed:
 
-- `StickyDesk.App/Themes/ThemeResources.xaml` now exists.
+- `CacheNote.App/Themes/ThemeResources.xaml` now exists.
 - It defines PRD light/dark colors and high-contrast brushes.
 
 Assessment:
@@ -343,12 +343,12 @@ Assessment:
 
 Observed:
 
-- `StickyDesk.UiTests/StickyDesk.UiTests.csproj` changed from `net9.0` to `net9.0-windows`.
+- `CacheNote.UiTests/CacheNote.UiTests.csproj` changed from `net9.0` to `net9.0-windows`.
 - Added `FrameworkReference Include="Microsoft.WindowsDesktop.App"` to provide `Accessibility.dll` for FlaUI.
 
 Verification:
 
-- Command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.UiTests\StickyDesk.UiTests.csproj -c Debug --filter M0_FoundationSmoke`
+- Command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.UiTests\CacheNote.UiTests.csproj -c Debug --filter M0_FoundationSmoke`
 - Result: failed with a different error: `System.InvalidOperationException: No process is associated with this object`.
 
 Assessment:
@@ -360,15 +360,15 @@ Assessment:
 
 Observed:
 
-- `StickyDesk.Core/Logging/FileLogger.cs` changed to register the provider through `builder.Services.AddSingleton<ILoggerProvider>(...)`.
-- `StickyDesk.Tests/UnitTest1.cs` and `StickyDesk.Core/Class1.cs` are gone.
+- `CacheNote.Core/Logging/FileLogger.cs` changed to register the provider through `builder.Services.AddSingleton<ILoggerProvider>(...)`.
+- `CacheNote.Tests/UnitTest1.cs` and `CacheNote.Core/Class1.cs` are gone.
 - Added real unit tests: `AppPathsTests` and `MigrationsTests`.
 
 Verification:
 
-- Build command: `C:\Program Files\dotnet\dotnet.exe build StickyDesk.sln -c Debug -p:Platform=x64`
+- Build command: `C:\Program Files\dotnet\dotnet.exe build CacheNote.sln -c Debug -p:Platform=x64`
 - Build result: passed with 0 warnings and 0 errors.
-- Unit test command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore`
+- Unit test command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore`
 - Unit test result: passed, 5 tests.
 
 Assessment:
@@ -391,18 +391,18 @@ Assessment:
 
 Observed:
 
-- `StickyDesk.App/StickyDesk.App.csproj` now sets `WindowsPackageType=None`.
+- `CacheNote.App/CacheNote.App.csproj` now sets `WindowsPackageType=None`.
 - `EnableWinAppRunSupport=false` was added so debug runs stay truly unpackaged.
 - `PublishTrimmed=false` was added with a note that WinUI/XAML trimming is risky.
 - `ToastService.Register()` now catches notification registration failures and logs a warning instead of crashing the app when no app identity/AUMID exists.
 
 Verification:
 
-- Build command: `C:\Program Files\dotnet\dotnet.exe build StickyDesk.sln -c Debug -p:Platform=x64`
+- Build command: `C:\Program Files\dotnet\dotnet.exe build CacheNote.sln -c Debug -p:Platform=x64`
 - Build result: passed with 0 warnings and 0 errors.
-- Unit test command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore`
+- Unit test command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore`
 - Unit test result: passed, 5 tests.
-- UI smoke command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.UiTests\StickyDesk.UiTests.csproj -c Debug --no-restore --filter M0_FoundationSmoke`
+- UI smoke command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.UiTests\CacheNote.UiTests.csproj -c Debug --no-restore --filter M0_FoundationSmoke`
 - UI smoke result: passed, 1 test.
 
 Assessment:
@@ -416,7 +416,7 @@ Assessment:
 Observed:
 
 - Screenshot created: `artifacts/m0-foundation.png`.
-- Runtime folders/files appeared under the app output folder, including `data/stickydesk.db` and `logs/app.log`.
+- Runtime folders/files appeared under the app output folder, including `data/CacheNote.db` and `logs/app.log`.
 - Log entries show migration v1 applied, `AppNotificationManager registered`, app launched, and `Spike toast shown (delivered=True)`.
 
 Assessment:
@@ -430,16 +430,16 @@ Assessment:
 
 Verification:
 
-- Command: `C:\Program Files\dotnet\dotnet.exe publish StickyDesk.App\StickyDesk.App.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true`
+- Command: `C:\Program Files\dotnet\dotnet.exe publish CacheNote.App\CacheNote.App.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true`
 - Result: passed.
-- Publish output: `StickyDesk.App\bin\Release\net9.0-windows10.0.26100.0\win-x64\publish`
+- Publish output: `CacheNote.App\bin\Release\net9.0-windows10.0.26100.0\win-x64\publish`
 - Output file count/size: 544 files, about 278 MB.
-- Verified files include `StickyDesk.App.exe`, `Microsoft.WindowsAppRuntime.Bootstrap.dll`, and `Microsoft.ui.xaml.dll`.
+- Verified files include `CacheNote.App.exe`, `Microsoft.WindowsAppRuntime.Bootstrap.dll`, and `Microsoft.ui.xaml.dll`.
 
 Assessment:
 
 - The required unpackaged self-contained publish path is viable.
-- Final naming still needs attention: output executable is `StickyDesk.App.exe`, while the PRD folder layout expects `StickyDesk.exe`.
+- Final naming still needs attention: output executable is `CacheNote.App.exe`, while the PRD folder layout expects `CacheNote.exe`.
 
 ### 2026-06-07 12:23:54 -05:00 - Watch Interval
 
@@ -492,11 +492,11 @@ PRD evidence:
 
 Verification:
 
-- Build command: `C:\Program Files\dotnet\dotnet.exe build StickyDesk.sln -c Debug -p:Platform=x64`
+- Build command: `C:\Program Files\dotnet\dotnet.exe build CacheNote.sln -c Debug -p:Platform=x64`
 - Build result: passed with 0 warnings and 0 errors.
-- Unit test command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore`
+- Unit test command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore`
 - Unit test result: passed, 5 tests.
-- UI smoke command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.UiTests\StickyDesk.UiTests.csproj -c Debug --no-restore --filter M0_FoundationSmoke`
+- UI smoke command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.UiTests\CacheNote.UiTests.csproj -c Debug --no-restore --filter M0_FoundationSmoke`
 - UI smoke result: passed, 1 test.
 - Static scan: no STT/AI/cloud implementation files have landed in the repo yet; the issue is currently plan-level.
 
@@ -504,7 +504,7 @@ Assessment:
 
 - Current implementation remains technically green.
 - The updated plan introduces major scope changes that contradict the current PRD unless the product scope has explicitly changed.
-- The `M0 ✅ DONE` label is stronger than the verifier evidence supports because user gate, clean screenshot, `StickyDesk.exe` naming, and toast action activation proof are still missing.
+- The `M0 ✅ DONE` label is stronger than the verifier evidence supports because user gate, clean screenshot, `CacheNote.exe` naming, and toast action activation proof are still missing.
 - Milestone references need consistency cleanup after adding M5/M8/M9.
 
 ### 2026-06-07 12:51:08 -05:00 - Watch Interval
@@ -531,11 +531,11 @@ Observed:
 
 Verification:
 
-- Build command: `C:\Program Files\dotnet\dotnet.exe build StickyDesk.sln -c Debug -p:Platform=x64`
+- Build command: `C:\Program Files\dotnet\dotnet.exe build CacheNote.sln -c Debug -p:Platform=x64`
 - Build result: passed with 0 warnings and 0 errors.
-- Unit test command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore`
+- Unit test command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore`
 - Unit test result: passed, 5 tests.
-- UI smoke command: `C:\Program Files\dotnet\dotnet.exe test StickyDesk.UiTests\StickyDesk.UiTests.csproj -c Debug --no-restore --filter M0_FoundationSmoke`
+- UI smoke command: `C:\Program Files\dotnet\dotnet.exe test CacheNote.UiTests\CacheNote.UiTests.csproj -c Debug --no-restore --filter M0_FoundationSmoke`
 - UI smoke result: passed, 1 test.
 - Static scan: no STT/AI/cloud implementation files have landed in the repo yet.
 
@@ -581,7 +581,7 @@ Report updates:
 
 Architecture stance for upcoming Claude changes:
 
-- `StickyDesk.Core` should stay provider-neutral and testable.
+- `CacheNote.Core` should stay provider-neutral and testable.
 - External providers, `.env` loading, WebSocket/HTTP clients, NAudio capture, and SDK-specific code should live in app/infrastructure adapters and be injected through interfaces.
 - Cloud features must remain optional at runtime: local notes/tasks/reminders should keep working without keys or network.
 - AI agentic actions must preview first and apply only through validated DTOs and transactional repository/service paths.
@@ -593,19 +593,19 @@ Observed:
 - Added M1a-ish editor/data files: `Note`, `ChecklistItem`, `NoteRepository`, `ChecklistRepository`, `EditorViewModel`, `ChecklistItemViewModel`.
 - Updated `CoreServiceCollectionExtensions` to register repositories/viewmodel and set `DefaultTypeMap.MatchNamesWithUnderscores = true`.
 - Replaced `MainPage` with a RichEditBox editor, formatting toolbar, inline checklist region, debounced autosave, and x:Bind viewmodel wiring.
-- Added `StickyDesk.UiTests/M1_EditorSmoke.cs`.
+- Added `CacheNote.UiTests/M1_EditorSmoke.cs`.
 - Added `.env.example`, `.env`, and `.gitignore`; `.env` exists locally and key values were checked only in redacted form.
 
 Verification:
 
-- Required gate build: `dotnet build StickyDesk.sln -c Debug -p:Platform=x64`
-- Result: failed in `StickyDesk.App` with `WMC9999: Specified argument was out of the range of valid values` from `Microsoft.UI.Xaml.Markup.Compiler.interop.targets`.
-- Default build: `dotnet build StickyDesk.sln -c Debug`
-- Result: passed, but produced an x86 app because solution `Any CPU` maps `StickyDesk.App` to `Debug|x86`.
-- Unit tests: `dotnet test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore`
+- Required gate build: `dotnet build CacheNote.sln -c Debug -p:Platform=x64`
+- Result: failed in `CacheNote.App` with `WMC9999: Specified argument was out of the range of valid values` from `Microsoft.UI.Xaml.Markup.Compiler.interop.targets`.
+- Default build: `dotnet build CacheNote.sln -c Debug`
+- Result: passed, but produced an x86 app because solution `Any CPU` maps `CacheNote.App` to `Debug|x86`.
+- Unit tests: `dotnet test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore`
 - Result: passed, 5 tests.
-- M1 UI smoke: `dotnet test StickyDesk.UiTests\StickyDesk.UiTests.csproj -c Debug --no-restore --filter M1_EditorSmoke`
-- Result: passed, 1 test, but not trusted as an x64 gate because it launches the newest `StickyDesk.App.exe` under `bin`, currently the x86/non-primary output.
+- M1 UI smoke: `dotnet test CacheNote.UiTests\CacheNote.UiTests.csproj -c Debug --no-restore --filter M1_EditorSmoke`
+- Result: passed, 1 test, but not trusted as an x64 gate because it launches the newest `CacheNote.App.exe` under `bin`, currently the x86/non-primary output.
 - Screenshot: `artifacts/m1a-editor.png` exists, but it still captures surrounding desktop/editor content and visibly shows title `Untitled` even though the smoke sets/asserts `Groceries`.
 
 Assessment:
@@ -635,9 +635,9 @@ Observed:
 
 Verification:
 
-- First recheck of `dotnet build StickyDesk.sln -c Debug -p:Platform=x64` failed on generated `MainPage.g.cs` because `MainPage.xaml` referenced handlers that were not yet present at that moment.
+- First recheck of `dotnet build CacheNote.sln -c Debug -p:Platform=x64` failed on generated `MainPage.g.cs` because `MainPage.xaml` referenced handlers that were not yet present at that moment.
 - After Claude added the handlers, the x64 build failed with current error: `MainWindow.xaml(25,14): WMC0011 Unknown member 'Footer' on element 'TitleBar'`.
-- Unit tests still pass: `dotnet test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore` passed 5 tests.
+- Unit tests still pass: `dotnet test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore` passed 5 tests.
 
 Assessment:
 
@@ -654,7 +654,7 @@ Observed:
 
 Verification:
 
-- `dotnet build StickyDesk.sln -c Debug -p:Platform=x64` still fails with `MainWindow.xaml(25,14): WMC0011 Unknown member 'Footer' on element 'TitleBar'`.
+- `dotnet build CacheNote.sln -c Debug -p:Platform=x64` still fails with `MainWindow.xaml(25,14): WMC0011 Unknown member 'Footer' on element 'TitleBar'`.
 
 Assessment:
 
@@ -669,11 +669,11 @@ Observed:
 
 Verification:
 
-- `dotnet build StickyDesk.sln -c Debug -p:Platform=x64` now passes with 0 warnings and 0 errors.
-- `dotnet test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore` passes 5 tests.
-- First x64-targeted M1 smoke run used `STICKYDESK_EXE=...\bin\x64\Debug\...\StickyDesk.App.exe` and failed while saving screenshots with a GDI+ error.
+- `dotnet build CacheNote.sln -c Debug -p:Platform=x64` now passes with 0 warnings and 0 errors.
+- `dotnet test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore` passes 5 tests.
+- First x64-targeted M1 smoke run used `CacheNote_EXE=...\bin\x64\Debug\...\CacheNote.App.exe` and failed while saving screenshots with a GDI+ error.
 - After deleting only generated `artifacts/m1a-editor.png` and `artifacts/m1a-themetoggled.png`, the same x64-targeted M1 smoke passed.
-- Regenerated screenshots are not valid proof: both `artifacts/m1a-editor.png` and `artifacts/m1a-themetoggled.png` show the underlying browser/video page instead of StickyDesk.
+- Regenerated screenshots are not valid proof: both `artifacts/m1a-editor.png` and `artifacts/m1a-themetoggled.png` show the underlying browser/video page instead of CacheNote.
 
 Assessment:
 
@@ -691,17 +691,17 @@ Observed:
 
 Verification:
 
-- `dotnet build StickyDesk.sln -c Debug -p:Platform=x64` passed with 0 warnings and 0 errors.
-- `dotnet test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore` passed 5 tests.
-- `STICKYDESK_EXE=...\bin\x64\Debug\...\StickyDesk.App.exe; dotnet test StickyDesk.UiTests\StickyDesk.UiTests.csproj -c Debug --no-restore --filter M1_EditorSmoke` passed 1 test.
-- Fresh screenshots now show StickyDesk instead of the wrong underlying browser page.
+- `dotnet build CacheNote.sln -c Debug -p:Platform=x64` passed with 0 warnings and 0 errors.
+- `dotnet test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore` passed 5 tests.
+- `CacheNote_EXE=...\bin\x64\Debug\...\CacheNote.App.exe; dotnet test CacheNote.UiTests\CacheNote.UiTests.csproj -c Debug --no-restore --filter M1_EditorSmoke` passed 1 test.
+- Fresh screenshots now show CacheNote instead of the wrong underlying browser page.
 
 Assessment:
 
 - Build/test health is green for M1a, but the visual gate still needs cleanup.
 - `artifacts/m1a-editor.png` and `artifacts/m1a-themetoggled.png` include desktop/editor content on the left edge and the toolbar is truncated on the right.
 - The smoke reuses persisted app data, so the artifact is not a clean deterministic M1 editor scenario.
-- `TestApp.FindExe()` still needs an explicit `STICKYDESK_EXE` for reliable gate runs; otherwise it can pick whichever `StickyDesk.App.exe` is newest under `bin`.
+- `TestApp.FindExe()` still needs an explicit `CacheNote_EXE` for reliable gate runs; otherwise it can pick whichever `CacheNote.App.exe` is newest under `bin`.
 - Current status: green checks, not yet polished/isolated enough to call M1a accepted.
 
 ### 2026-06-07 13:22:00 -05:00 - Watch Interval
@@ -743,19 +743,19 @@ Observed:
 - User reported the app instance opened from `bin\x64\Debug` was outdated.
 - Current source is much newer than the last verifier report, with major additions: `HomePage`, `ComingSoonPage`, `NotesViewModel`, `NoteListItemViewModel`, `Program` custom single-instance entrypoint, `GlobalHotkey`, tray menu wiring, `Reminder`, `ReminderRepository`, `ReminderService`, `RemindersViewModel`, `RemindersPage`, and reminder toast action plumbing.
 - Latest x64 build output was rebuilt and opened for the user.
-- Opened app path: `StickyDesk.App\bin\x64\Debug\net9.0-windows10.0.26100.0\win-x64\StickyDesk.App.exe`.
+- Opened app path: `CacheNote.App\bin\x64\Debug\net9.0-windows10.0.26100.0\win-x64\CacheNote.App.exe`.
 - Opened process: `23796`; executable timestamp: 2026-06-07 17:07:27.
 
 Verification:
 
-- Build command: `dotnet build StickyDesk.sln -c Debug -p:Platform=x64`
+- Build command: `dotnet build CacheNote.sln -c Debug -p:Platform=x64`
 - Build result: passed, 0 warnings, 0 errors.
-- Unit test command: `dotnet test StickyDesk.Tests\StickyDesk.Tests.csproj -c Debug --no-restore`
+- Unit test command: `dotnet test CacheNote.Tests\CacheNote.Tests.csproj -c Debug --no-restore`
 - Unit test result: passed, 13 tests.
-- Full walkthrough command: `STICKYDESK_EXE=...\bin\x64\Debug\...\StickyDesk.App.exe; dotnet test StickyDesk.UiTests\StickyDesk.UiTests.csproj -c Debug --no-restore --filter FullWalkthrough`
+- Full walkthrough command: `CacheNote_EXE=...\bin\x64\Debug\...\CacheNote.App.exe; dotnet test CacheNote.UiTests\CacheNote.UiTests.csproj -c Debug --no-restore --filter FullWalkthrough`
 - Full walkthrough result: failed.
 - Current `artifacts/walkthrough-results.txt` failures: numbered toggle, headings, font family, font size, color picker, checklist, list actions, list toggle, theme toggle, update button, and back-home all fail with `NullReferenceException` after the earlier notes-formatting steps.
-- `StickyDesk.UiTests/M3_RemindersSmoke.cs` exists for reminders create/complete/delete, but verifier did not run it because the test clears persisted reminders and the user-visible app was left open for review.
+- `CacheNote.UiTests/M3_RemindersSmoke.cs` exists for reminders create/complete/delete, but verifier did not run it because the test clears persisted reminders and the user-visible app was left open for review.
 
 Assessment:
 
