@@ -14,6 +14,7 @@
 
     <Page.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis" />
         <conv:BoolToSelectionBrushConverter x:Key="SelBrush" />
         <conv:HexToBrushConverter x:Key="HexToBrush" />
 
@@ -644,6 +645,9 @@
                         <Button AutomationProperties.AutomationId="AddChecklistTool" Command="{x:Bind Vm.AddChecklistItemCommand}" Style="{StaticResource ToolButton}" ToolTipService.ToolTip="Add checklist item">
                             <Ellipse Width="15" Height="15" Stroke="{ThemeResource AppTextPrimaryBrush}" StrokeThickness="1.5" />
                         </Button>
+                        <Button AutomationProperties.AutomationId="AddMarkdownTool" Command="{x:Bind Vm.AddMarkdownBlockCommand}" Style="{StaticResource ToolButton}" ToolTipService.ToolTip="Insert a Markdown / code block">
+                            <TextBlock FontFamily="Consolas" FontSize="15" FontWeight="SemiBold" Text="{}{ }" />
+                        </Button>
 
                         <Rectangle Width="1" Height="20" Margin="4,0" Fill="{ThemeResource AppBorderBrush}" />
 
@@ -742,6 +746,52 @@
                                                 <FontIcon FontSize="13" Glyph="&#xE711;" />
                                             </Button>
                                         </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Markdown blocks ({} tool): raw md source (monospace, code-friendly) + Preview render. -->
+                            <ItemsControl Margin="6,0,6,8" ItemsSource="{x:Bind Vm.MdBlocks}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:MdBlockViewModel">
+                                        <Border Margin="0,4" Padding="8" Background="{ThemeResource AppHoverBrush}" BorderBrush="{ThemeResource AppBorderBrush}" BorderThickness="1" CornerRadius="8">
+                                            <StackPanel Spacing="6">
+                                                <Grid>
+                                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                        <FontIcon FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Glyph="&#xE943;" />
+                                                        <TextBlock FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="Markdown" />
+                                                    </StackPanel>
+                                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="2">
+                                                        <ToggleButton
+                                                            AutomationProperties.AutomationId="MdPreviewToggle"
+                                                            Click="MdPreview_Toggled"
+                                                            Content="Preview"
+                                                            FontSize="12"
+                                                            IsChecked="{x:Bind Preview, Mode=TwoWay}" />
+                                                        <Button Click="DeleteMdBlock_Click" Style="{StaticResource ToolButton}" ToolTipService.ToolTip="Remove block">
+                                                            <FontIcon FontSize="13" Glyph="&#xE74D;" />
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <TextBox
+                                                    x:Name="MdSourceBox"
+                                                    AcceptsReturn="True"
+                                                    AutomationProperties.AutomationId="MdSourceBox"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    FontFamily="Consolas"
+                                                    FontSize="14"
+                                                    IsSpellCheckEnabled="False"
+                                                    PlaceholderText="Write Markdown — # heading, **bold**, `code`, ```fenced```…"
+                                                    Text="{x:Bind Content, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                    TextWrapping="Wrap"
+                                                    Visibility="{x:Bind Preview, Mode=OneWay, Converter={StaticResource InverseBoolToVis}}" />
+                                                <RichTextBlock
+                                                    x:Name="MdPreviewBlock"
+                                                    Loaded="MdPreview_Loaded"
+                                                    Visibility="{x:Bind Preview, Mode=OneWay, Converter={StaticResource BoolToVis}}" />
+                                            </StackPanel>
+                                        </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

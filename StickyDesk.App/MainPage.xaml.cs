@@ -5,10 +5,12 @@ using System.Linq;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
+using System.Text.RegularExpressions;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using StickyDesk.Core.Services;
@@ -191,6 +193,103 @@ public sealed partial class MainPage : Page
         SaveNow();
         _compactDetail = false;
         ApplyCompactPane();
+    }
+
+    // ----- Markdown blocks ({} tool): monospace md source + a rendered Preview -----
+    private void DeleteMdBlock_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is MdBlockViewModel vm)
+            Vm.RemoveMdBlock(vm);
+    }
+
+    private void MdPreview_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is MdBlockViewModel vm
+            && vm.Preview && FindInTemplate(fe, "MdPreviewBlock") is RichTextBlock rtb)
+            RenderMarkdownInto(rtb, vm.Content);
+    }
+
+    private void MdPreview_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is RichTextBlock rtb && rtb.DataContext is MdBlockViewModel vm && vm.Preview)
+            RenderMarkdownInto(rtb, vm.Content);
+    }
+
+    private static FrameworkElement? FindInTemplate(FrameworkElement from, string name)
+    {
+        FrameworkElement? cur = from;
+        while (cur is not null)
+        {
+            if (cur.FindName(name) is FrameworkElement found)
+                return found;
+            cur = cur.Parent as FrameworkElement;
+        }
+        return null;
+    }
+
+    private static readonly Regex MdInline = new(@"(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)", RegexOptions.Compiled);
+
+    /// <summary>Minimal Markdown → RichTextBlock: headings, fenced code, bullets, bold/italic/inline-code.</summary>
+    private static void RenderMarkdownInto(RichTextBlock rtb, string? md)
+    {
+        rtb.Blocks.Clear();
+        var lines = (md ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+        var inCode = false;
+        var code = new StringBuilder();
+        foreach (var line in lines)
+        {
+            if (line.TrimStart().StartsWith("```"))
+            {
+                if (inCode) { rtb.Blocks.Add(CodeParagraph(code.ToString())); code.Clear(); inCode = false; }
+                else inCode = true;
+                continue;
+            }
+            if (inCode) { code.Append(line).Append('\n'); continue; }
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            var p = new Paragraph { Margin = new Thickness(0, 2, 0, 2) };
+            if (line.StartsWith("### ")) AddInlines(p, line[4..], 14, FontWeights.SemiBold);
+            else if (line.StartsWith("## ")) AddInlines(p, line[3..], 16, FontWeights.SemiBold);
+            else if (line.StartsWith("# ")) AddInlines(p, line[2..], 19, FontWeights.Bold);
+            else if (line.StartsWith("- ") || line.StartsWith("* ")) AddInlines(p, "•  " + line[2..]);
+            else AddInlines(p, line);
+            rtb.Blocks.Add(p);
+        }
+        if (inCode && code.Length > 0)
+            rtb.Blocks.Add(CodeParagraph(code.ToString()));
+    }
+
+    private static Paragraph CodeParagraph(string code)
+    {
+        var p = new Paragraph { Margin = new Thickness(0, 4, 0, 4) };
+        p.Inlines.Add(new Run { Text = code.TrimEnd('\n'), FontFamily = new FontFamily("Consolas"), FontSize = 13 });
+        return p;
+    }
+
+    private static void AddInlines(Paragraph p, string text, double baseSize = 0, Windows.UI.Text.FontWeight? baseWeight = null)
+    {
+        void Add(Run r)
+        {
+            if (baseSize > 0) r.FontSize = baseSize;
+            p.Inlines.Add(r);
+        }
+
+        var pos = 0;
+        foreach (Match m in MdInline.Matches(text))
+        {
+            if (m.Index > pos)
+                Add(new Run { Text = text[pos..m.Index], FontWeight = baseWeight ?? FontWeights.Normal });
+            var tok = m.Value;
+            if (tok.StartsWith("**"))
+                Add(new Run { Text = tok[2..^2], FontWeight = FontWeights.SemiBold });
+            else if (tok.StartsWith("`"))
+                Add(new Run { Text = tok[1..^1], FontFamily = new FontFamily("Consolas") });
+            else
+                Add(new Run { Text = tok[1..^1], FontStyle = Windows.UI.Text.FontStyle.Italic });
+            pos = m.Index + m.Length;
+        }
+        if (pos < text.Length)
+            Add(new Run { Text = text[pos..], FontWeight = baseWeight ?? FontWeights.Normal });
     }
 
     private bool _newOnLoad;

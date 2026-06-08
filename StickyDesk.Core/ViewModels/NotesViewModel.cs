@@ -20,9 +20,13 @@ public sealed partial class NotesViewModel : ObservableObject
     private readonly IChecklistRepository _checklist;
     private readonly ITagService _tags;
     private readonly ISearchService _search;
+    private readonly IMdBlockRepository _md;
 
     public ObservableCollection<NoteListItemViewModel> Notes { get; } = new();
     public ObservableCollection<ChecklistItemViewModel> Items { get; } = new();
+
+    /// <summary>Markdown blocks ({} tool) appended to the current note.</summary>
+    public ObservableCollection<MdBlockViewModel> MdBlocks { get; } = new();
 
     /// <summary>Tags attached to the currently-open note (chips under the title).</summary>
     public ObservableCollection<TagViewModel> CurrentNoteTags { get; } = new();
@@ -44,12 +48,13 @@ public sealed partial class NotesViewModel : ObservableObject
     /// <summary>Raised when the view should load a note's RTF into the editor.</summary>
     public event Action<long>? ContentRequested;
 
-    public NotesViewModel(INoteRepository notes, IChecklistRepository checklist, ITagService tags, ISearchService search)
+    public NotesViewModel(INoteRepository notes, IChecklistRepository checklist, ITagService tags, ISearchService search, IMdBlockRepository md)
     {
         _notes = notes;
         _checklist = checklist;
         _tags = tags;
         _search = search;
+        _md = md;
     }
 
     public void LoadList()
@@ -140,6 +145,10 @@ public sealed partial class NotesViewModel : ObservableObject
         Items.Clear();
         foreach (var ci in _checklist.GetByNote(item.Id))
             Items.Add(Wrap(ci));
+
+        MdBlocks.Clear();
+        foreach (var mb in _md.GetByNote(item.Id))
+            MdBlocks.Add(WrapMd(mb));
 
         LoadTagsForCurrent();
         ContentRequested?.Invoke(item.Id);
@@ -248,6 +257,37 @@ public sealed partial class NotesViewModel : ObservableObject
     {
         _checklist.Delete(vm.Id);
         Items.Remove(vm);
+    }
+
+    /// <summary>Insert a Markdown block ({} tool) into the current note (appended).</summary>
+    [RelayCommand]
+    private void AddMarkdownBlock()
+    {
+        if (CurrentNoteId == 0)
+            return;
+        var id = _md.Add(CurrentNoteId, "", MdBlocks.Count);
+        var vm = WrapMd(new MdBlock { Id = id, NoteId = CurrentNoteId });
+        vm.Preview = false;   // open new blocks in edit mode
+        MdBlocks.Add(vm);
+    }
+
+    public void RemoveMdBlock(MdBlockViewModel vm)
+    {
+        _md.Delete(vm.Id);
+        MdBlocks.Remove(vm);
+    }
+
+    private MdBlockViewModel WrapMd(MdBlock block)
+    {
+        var vm = new MdBlockViewModel { Id = block.Id, Content = block.Content, Preview = !string.IsNullOrEmpty(block.Content) };
+        vm.PropertyChanged += OnMdChanged;
+        return vm;
+    }
+
+    private void OnMdChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is MdBlockViewModel vm && e.PropertyName == nameof(MdBlockViewModel.Content))
+            _md.UpdateContent(vm.Id, vm.Content);
     }
 
     // ----- helpers -----

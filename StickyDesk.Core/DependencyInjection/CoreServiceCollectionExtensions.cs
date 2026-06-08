@@ -30,6 +30,7 @@ public static class CoreServiceCollectionExtensions
         services.AddSingleton<IAttachmentRepository, AttachmentRepository>();
         services.AddSingleton<IEventRepository, EventRepository>();
         services.AddSingleton<EventService>();
+        services.AddSingleton<IMdBlockRepository, MdBlockRepository>();
         services.AddSingleton<IReminderService, ReminderService>();
         services.AddSingleton<ITaskService, TaskService>();
         services.AddSingleton<ITagService, TagService>();
