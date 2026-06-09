@@ -14,6 +14,10 @@ public sealed partial class NoteListItemViewModel : ObservableObject
     [ObservableProperty]
     private string _snippet = "";
 
+    /// <summary>"#RRGGBB" title color from the font-color tool; null = theme default.</summary>
+    [ObservableProperty]
+    private string? _titleColorHex;
+
     [ObservableProperty]
     private bool _pinned;
 

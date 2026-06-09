@@ -197,6 +197,8 @@ public sealed partial class NotesViewModel : ObservableObject
             ContentPlain = src.ContentPlain,
         };
         var id = _notes.Insert(copy);
+        if (src.TitleColorHex is not null)
+            _notes.SetTitleColor(id, src.TitleColorHex);
 
         var order = 0;
         foreach (var ci in _checklist.GetByNote(CurrentNoteId))
@@ -346,7 +348,23 @@ public sealed partial class NotesViewModel : ObservableObject
         Snippet = Snippet(n.ContentPlain),
         Pinned = n.Pinned,
         Favorite = n.Favorite,
+        TitleColorHex = n.TitleColorHex,
     };
+
+    /// <summary>The stored title color of the open note ("#RRGGBB"); null = theme default.</summary>
+    public string? CurrentTitleColorHex
+        => CurrentNoteId == 0 ? null : _notes.GetById(CurrentNoteId)?.TitleColorHex;
+
+    /// <summary>Persist the open note's title color and reflect it in the list row.</summary>
+    public void SetTitleColorForCurrent(string? hex)
+    {
+        if (CurrentNoteId == 0)
+            return;
+        _notes.SetTitleColor(CurrentNoteId, hex);
+        var item = Notes.FirstOrDefault(n => n.Id == CurrentNoteId);
+        if (item is not null)
+            item.TitleColorHex = hex;
+    }
 
     private static string Snippet(string? plain)
     {

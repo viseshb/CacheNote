@@ -13,7 +13,11 @@ public sealed partial class HexToBrushConverter : IValueConverter
         // would throw inside x:Bind evaluation and crash the page render. Fall back to gray.
         var fallback = new SolidColorBrush(Color.FromArgb(0xFF, 0x71, 0x71, 0x7A));
         var hex = (value as string)?.TrimStart('#');
-        if (string.IsNullOrEmpty(hex) || (hex.Length != 6 && hex.Length != 8))
+        // No color at all (e.g. note title with no custom color) → null, so the control
+        // falls back to its inherited theme foreground instead of painting gray.
+        if (string.IsNullOrEmpty(hex))
+            return null!;
+        if (hex.Length != 6 && hex.Length != 8)
             return fallback;
 
         try

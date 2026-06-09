@@ -20,6 +20,7 @@ public sealed class MigrationRunner
         (2, SchemaV2.Sql),
         (3, SchemaV3.Sql),
         (4, SchemaV4.Sql),
+        (5, SchemaV5.Sql),
     ];
 
     public MigrationRunner(IDbConnectionFactory factory, ILogger<MigrationRunner> log)

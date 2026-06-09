@@ -257,6 +257,11 @@ public sealed partial class MainWindow : Window
             RootFrame.Navigate(typeof(RemindersPage));
     }
 
+    /// <summary>Collapse the title to "CN" only when the drag region is too narrow for
+    /// "CacheNote" (≈75px at 13px SemiBold) — otherwise it overlaps the neighbor buttons.</summary>
+    private void AppTitleBar_SizeChanged(object sender, SizeChangedEventArgs e)
+        => AppTitleText.Text = e.NewSize.Width < 95 ? "CN" : "CacheNote";
+
     private void NewNoteAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
@@ -791,6 +796,11 @@ public sealed partial class MainWindow : Window
 
     private void ApplyTheme(ElementTheme theme, bool persist)
     {
+        // RichEditBox wipes custom font colors when its themed Foreground changes — let the
+        // Notes page snapshot the RTF first and restore/adapt it after the swap.
+        var notesPage = RootFrame.Content as MainPage;
+        notesPage?.PrepareThemeSwap();
+
         RootGrid.RequestedTheme = theme;
 
         var isDark = theme == ElementTheme.Dark ||
@@ -805,6 +815,8 @@ public sealed partial class MainWindow : Window
 
         if (persist)
             App.GetService<ISettingsService>().Set(ThemeKey, theme.ToString());
+
+        notesPage?.FinishThemeSwap();
     }
 
     private void CenterOnScreen()

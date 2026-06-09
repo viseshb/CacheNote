@@ -453,6 +453,14 @@ public sealed partial class MainPage : Page
         EditorBox.PlaceholderText = "Start writing…";
         _loading = false;
         LoadAttachments(id);
+        ApplyTitleColor();
+    }
+
+    /// <summary>Paint the title box with the note's stored title color (null → inherit theme).</summary>
+    private void ApplyTitleColor()
+    {
+        var hex = Vm.CurrentTitleColorHex;
+        TitleBox.Foreground = string.IsNullOrEmpty(hex) ? null : new SolidColorBrush(ColorFromHex(hex));
     }
 
     // ----- attachments (M7) -----
@@ -865,8 +873,14 @@ public sealed partial class MainPage : Page
     private Color? _latestColor;
     private TextBlock? _colorOverlay;   // live-recolor copy drawn over the selection while picking
 
+    private bool _colorTargetTitle;   // color tool aimed at the note TITLE (TextBox), not the body
+
     private void ColorFlyout_Opening(object sender, object e)
     {
+        // The tool colors whichever text the user was in: the title box (focused when the
+        // flyout opened — the color button doesn't steal focus) or the editor selection.
+        _colorTargetTitle = TitleBox.FocusState != FocusState.Unfocused;
+
         // Capture the range to recolor. Do NOT seed the picker from the current text color —
         // light-mode default text is near-black (#18181B), which drops the picker brightness
         // so picks come out dark.
@@ -961,6 +975,15 @@ public sealed partial class MainPage : Page
     // color is visible immediately.
     private void LiveApply(Color color)
     {
+        // Title target: the title TextBox is single-color — recolor the whole thing live.
+        if (_colorTargetTitle)
+        {
+            TitleBox.Foreground = new SolidColorBrush(color);
+            ColorBar.Fill = new SolidColorBrush(color);
+            _pendingColor = color;
+            return;
+        }
+
         // Editor keeps focus (AllowFocusOnInteraction=False on the button + picker), so applying
         // via the live Selection both lands AND repaints immediately. Hide the selection
         // highlight so the actual color shows instead of a blue overlay.
@@ -998,10 +1021,11 @@ public sealed partial class MainPage : Page
         if (_syncing)
             return;
         _latestColor = args.NewColor;
-        ColorBar.Fill = new SolidColorBrush(args.NewColor);   // bar tracks instantly
-        if (_colorOverlay is not null)                        // overlay recolors LIVE (composition)
-            _colorOverlay.Foreground = new SolidColorBrush(args.NewColor);
-        Diag($"CHG {args.NewColor} overlayNull={_colorOverlay is null}");
+        // LIVE recolor of the real text while the user drags the picker. The RichEdit engine
+        // defers repainting while the picker holds pointer capture — ApplyDisplayUpdates()
+        // forces the repaint so the color tracks in realtime instead of landing on release.
+        LiveApply(args.NewColor);
+        EditorBox.Document.ApplyDisplayUpdates();
     }
 
     private void Color_Click(object sender, ItemClickEventArgs e)
@@ -1227,6 +1251,28 @@ public sealed partial class MainPage : Page
 
     private void ColorFlyout_Closed(object sender, object e)
     {
+        // Title target: persist the color per note + reflect in the list. Pure black/white
+        // is stored as "theme default" so it flips correctly on light/dark switch; any other
+        // color sticks across themes.
+        if (_colorTargetTitle)
+        {
+            if ((_latestColor ?? _pendingColor) is Color picked)
+            {
+                var themed = ThemedTextColor();
+                var isDefaultish =
+                    (picked.R == 0x00 && picked.G == 0x00 && picked.B == 0x00) ||
+                    (picked.R == 0xFF && picked.G == 0xFF && picked.B == 0xFF) ||
+                    (picked.R == themed.R && picked.G == themed.G && picked.B == themed.B);   // "auto" swatch
+                var hex = isDefaultish ? null : $"#{picked.R:X2}{picked.G:X2}{picked.B:X2}";
+                Vm.SetTitleColorForCurrent(hex);
+                ApplyTitleColor();
+            }
+            _colorTargetTitle = false;
+            _latestColor = null;
+            _pendingColor = null;
+            return;
+        }
+
         // Commit the picked color to the REAL text range once (the overlay was just a preview),
         // tear down the overlay, restore the normal highlight, and persist.
         if (_latestColor is Color last)
@@ -1251,6 +1297,74 @@ public sealed partial class MainPage : Page
             sel.CharacterFormat.ForegroundColor = c;
         OnContentChanged(this, null!);
     }
+
+    // ----- theme swap: keep custom font colors across light/dark -----
+    // RichEditBox re-applies its themed Foreground to the WHOLE document when the theme
+    // changes, wiping every custom run color. Snapshot the RTF before the swap, restore it
+    // after, then flip ONLY theme-default / pure-black / pure-white runs to the new theme's
+    // text color — any other color the user picked survives the switch.
+    private string? _themeSwapRtf;
+    private Color _themeSwapOldDefault;
+
+    public void PrepareThemeSwap()
+    {
+        _themeSwapRtf = null;
+        if (Vm.CurrentNoteId == 0)
+            return;
+        EditorBox.Document.GetText(TextGetOptions.FormatRtf, out var rtf);
+        _themeSwapRtf = rtf;
+        _themeSwapOldDefault = ThemedTextColor();
+    }
+
+    public void FinishThemeSwap()
+    {
+        if (_themeSwapRtf is not string rtf)
+            return;
+        _themeSwapRtf = null;
+        var oldDefault = _themeSwapOldDefault;
+        // Enqueue so the new theme's brushes have propagated before we read ThemedTextColor().
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _loading = true;
+            EditorBox.Document.SetText(TextSetOptions.FormatRtf, rtf);
+            RecolorThemeDefaultRuns(oldDefault, ThemedTextColor());
+            _loading = false;
+            OnContentChanged(this, null!);
+        });
+    }
+
+    private void RecolorThemeDefaultRuns(Color oldDefault, Color newDefault)
+    {
+        var doc = EditorBox.Document;
+        doc.GetText(TextGetOptions.None, out var text);
+        var len = text.Length;
+        var probe = doc.GetRange(0, 0);
+        var pos = 0;
+        while (pos < len)
+        {
+            probe.SetRange(pos, pos + 1);
+            var c = probe.CharacterFormat.ForegroundColor;
+            var runEnd = pos + 1;
+            while (runEnd < len)
+            {
+                probe.SetRange(runEnd, runEnd + 1);
+                if (probe.CharacterFormat.ForegroundColor != c)
+                    break;
+                runEnd++;
+            }
+            if (IsThemeDefault(c, oldDefault))
+            {
+                var run = doc.GetRange(pos, runEnd);
+                run.CharacterFormat.ForegroundColor = newDefault;
+            }
+            pos = runEnd;
+        }
+    }
+
+    private static bool IsThemeDefault(Color c, Color oldDefault)
+        => (c.R == oldDefault.R && c.G == oldDefault.G && c.B == oldDefault.B)
+           || (c.R == 0x00 && c.G == 0x00 && c.B == 0x00)     // pure black follows the theme
+           || (c.R == 0xFF && c.G == 0xFF && c.B == 0xFF);    // pure white follows the theme
 
     // ----- helpers -----
     private Color ThemedTextColor() =>

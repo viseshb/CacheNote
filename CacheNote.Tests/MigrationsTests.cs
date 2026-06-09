@@ -27,7 +27,7 @@ public sealed class MigrationsTests : IDisposable
     {
         _runner.Run();
 
-        Assert.Equal(4, _runner.CurrentVersion());
+        Assert.Equal(5, _runner.CurrentVersion());
         Assert.True(File.Exists(_paths.DatabaseFile));
 
         using var conn = _factory.Create();
@@ -51,7 +51,7 @@ public sealed class MigrationsTests : IDisposable
     {
         _runner.Run();
         _runner.Run(); // must not throw or duplicate
-        Assert.Equal(4, _runner.CurrentVersion());
+        Assert.Equal(5, _runner.CurrentVersion());
     }
 
     [Fact]

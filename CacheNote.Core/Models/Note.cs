@@ -12,6 +12,9 @@ public sealed class Note
     /// <summary>Plaintext derived from the RTF at save time; indexed by FTS5.</summary>
     public string ContentPlain { get; set; } = "";
 
+    /// <summary>"#RRGGBB" title color picked via the font-color tool; null = theme default.</summary>
+    public string? TitleColorHex { get; set; }
+
     public bool Pinned { get; set; }
     public bool Favorite { get; set; }
     public bool IsArchived { get; set; }

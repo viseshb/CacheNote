@@ -19,6 +19,9 @@ public interface INoteRepository
     void SetPinned(long id, bool pinned);
     void SetFavorite(long id, bool favorite);
     void SetArchived(long id, bool archived);
+
+    /// <summary>"#RRGGBB" title color; null = follow the theme default.</summary>
+    void SetTitleColor(long id, string? hex);
     void SoftDelete(long id);
 
     /// <summary>M1a prototype helper: the most-recent live note, creating a blank one if none exist.</summary>
@@ -98,6 +101,12 @@ public sealed class NoteRepository : INoteRepository
     public void SetFavorite(long id, bool favorite) => SetFlag(id, "favorite", favorite);
     public void SetArchived(long id, bool archived) => SetFlag(id, "is_archived", archived);
     public void SoftDelete(long id) => SetFlag(id, "is_deleted", true);
+
+    public void SetTitleColor(long id, string? hex)
+    {
+        using var conn = _factory.Create();
+        conn.Execute("UPDATE notes SET title_color_hex = @hex WHERE id = @id;", new { id, hex });
+    }
 
     private void SetFlag(long id, string column, bool value)
     {

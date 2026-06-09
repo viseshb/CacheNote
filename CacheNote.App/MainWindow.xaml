@@ -201,8 +201,9 @@
             </ToggleButton>
 
             <!-- Center: drag region + app name. -->
-            <Border x:Name="AppTitleBar" Grid.Column="1" Background="Transparent" />
+            <Border x:Name="AppTitleBar" Grid.Column="1" Background="Transparent" SizeChanged="AppTitleBar_SizeChanged" />
             <TextBlock
+                x:Name="AppTitleText"
                 Grid.Column="1"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"

@@ -368,7 +368,7 @@
                                             Grid.Column="1"
                                             FontSize="14"
                                             FontWeight="SemiBold"
-                                            Foreground="{ThemeResource AppTextPrimaryBrush}"
+                                            Foreground="{x:Bind TitleColorHex, Mode=OneWay, Converter={StaticResource HexToBrush}}"
                                             Text="{x:Bind DisplayTitle, Mode=OneWay}"
                                             TextTrimming="CharacterEllipsis"
                                             TextWrapping="NoWrap" />
@@ -449,7 +449,6 @@
                         BorderThickness="0"
                         FontSize="30"
                         FontWeight="SemiBold"
-                        Foreground="{ThemeResource AppTextPrimaryBrush}"
                         PlaceholderText="Untitled"
                         Text="{x:Bind Vm.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                         TextChanged="OnContentChanged" />
