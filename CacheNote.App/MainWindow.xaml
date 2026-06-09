@@ -207,6 +207,8 @@
                 Grid.Column="1"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
+                AutomationProperties.AccessibilityView="Content"
+                AutomationProperties.AutomationId="AppTitleText"
                 FontSize="13"
                 FontWeight="SemiBold"
                 Foreground="{ThemeResource AppTextPrimaryBrush}"

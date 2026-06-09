@@ -124,6 +124,10 @@ public sealed partial class MainWindow : Window
 
         StartReminderEngine();
         StartGoogleSync();
+
+        // Title collapse must also track whole-window resizes (compact mode, drag-resize).
+        RootGrid.SizeChanged += (_, _) => UpdateTitleBarText();
+        UpdateTitleBarText();
     }
 
     // ----- Google Calendar sync: at startup, after local edits (debounced in the service),
@@ -258,9 +262,14 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Collapse the title to "CN" only when the drag region is too narrow for
-    /// "CacheNote" (≈75px at 13px SemiBold) — otherwise it overlaps the neighbor buttons.</summary>
+    /// "CacheNote" (≈75px at 13px SemiBold + breathing room) — otherwise it overlaps the
+    /// neighbor buttons. Evaluated from BOTH the drag-region Border and the root grid:
+    /// the Border alone missed resizes where its own SizeChanged didn't re-fire.</summary>
     private void AppTitleBar_SizeChanged(object sender, SizeChangedEventArgs e)
-        => AppTitleText.Text = e.NewSize.Width < 95 ? "CN" : "CacheNote";
+        => UpdateTitleBarText();
+
+    private void UpdateTitleBarText()
+        => AppTitleText.Text = AppTitleBar.ActualWidth < 120 ? "CN" : "CacheNote";
 
     private void NewNoteAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {

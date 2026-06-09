@@ -134,6 +134,35 @@ public sealed class E2E_Lifecycle
         }
     }
 
+    // ---------- title bar collapses "CacheNote" → "CN" when the drag region is too narrow ----------
+    [Fact]
+    public void TitleBar_Collapses_To_CN_When_Narrow()
+    {
+        var exe = TestApp.FindExe();
+        using var automation = new UIA3Automation();
+        var app = Application.Launch(exe);
+        try
+        {
+            var w = TestApp.WaitForMainWindow(app, automation);
+
+            Resize(w, 1100, 720);
+            var title = WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("AppTitleText")));
+            Assert.Equal("CacheNote", title.Name);
+
+            Resize(w, 380, 560);
+            Assert.Equal("CN", WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("AppTitleText"))).Name);
+            TestApp.Screenshot(w, "e2e-titlebar-cn.png");
+
+            Resize(w, 1100, 720);
+            Assert.Equal("CacheNote", WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("AppTitleText"))).Name);
+        }
+        finally
+        {
+            try { app.Close(); } catch { }
+            if (!app.HasExited) { try { app.Kill(); } catch { } }
+        }
+    }
+
     // ---------- AI ball panel must fit within the window at the minimum width ----------
     [Fact]
     public void AiBall_Panel_Fits_Within_Window_At_MinWidth()
