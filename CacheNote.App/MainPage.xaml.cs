@@ -15,6 +15,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using CacheNote.Core.Services;
 using CacheNote.Core.Speech;
+using CacheNote.Core.Ui;
 using CacheNote.Core.ViewModels;
 using CacheNote_App.Controls;
 using CacheNote_App.Services;
@@ -38,13 +39,6 @@ public sealed partial class MainPage : Page
     private static readonly string[] Sizes =
         ["10", "11", "12", "14", "16", "18", "20", "24", "28", "32", "40", "48"];
 
-    private static readonly (string Label, string Hex)[] Swatches =
-    [
-        ("Default", "auto"), ("#18181B", "#18181B"), ("#71717A", "#71717A"),
-        ("#2563EB", "#2563EB"), ("#0EA5E9", "#0EA5E9"), ("#16A34A", "#16A34A"),
-        ("#D97706", "#D97706"), ("#DC2626", "#DC2626"), ("#7C3AED", "#7C3AED"),
-        ("#FFFFFF", "#FFFFFF"),
-    ];
 
     public NotesViewModel Vm { get; }
 
@@ -423,10 +417,8 @@ public sealed partial class MainPage : Page
     {
         SwatchGrid.Items.Clear();
         var dark = ActualTheme == ElementTheme.Dark;
-        foreach (var (_, hex) in Swatches)
+        foreach (var (_, hex) in EditorSwatches.Visible(dark))
         {
-            if (dark && hex == "#18181B") continue;   // black is invisible on dark
-            if (!dark && hex == "#FFFFFF") continue;   // white is invisible on light
             var brush = hex == "auto"
                 ? new SolidColorBrush(Color.FromArgb(255, 0x88, 0x88, 0x88))
                 : new SolidColorBrush(ColorFromHex(hex));
