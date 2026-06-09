@@ -1,6 +1,8 @@
 using System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Animation;
 using CacheNote.Core.Models;
 using CacheNote.Core.Services;
 using CacheNote.Core.ViewModels;
@@ -39,6 +41,56 @@ public sealed partial class CalendarPage : Page
         Loaded += (_, _) => { Vm.Load(); UpdateEmpty(); };
         Vm.SelectedDayItems.CollectionChanged += (_, _) => UpdateEmpty();
         Vm.ListItems.CollectionChanged += (_, _) => UpdateEmpty();
+
+        // Ctrl + mouse wheel zooms through views. handledEventsToo so the inner ScrollViewers
+        // (which handle the wheel to scroll) don't swallow it.
+        AddHandler(UIElement.PointerWheelChangedEvent, new PointerEventHandler(Calendar_PointerWheel), handledEventsToo: true);
+        // When zoom changes the mode, reflect it in the dropdown + fade the content for smoothness.
+        Vm.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(CalendarViewModel.Mode))
+                OnModeChangedFromVm();
+        };
+    }
+
+    private bool _syncingMode;
+    private int _wheelAccum;
+
+    private void Calendar_PointerWheel(object sender, PointerRoutedEventArgs e)
+    {
+        if (!e.KeyModifiers.HasFlag(Windows.System.VirtualKeyModifiers.Control))
+            return;   // plain scroll = normal scrolling
+        e.Handled = true;
+        _wheelAccum += e.GetCurrentPoint(this).Properties.MouseWheelDelta;
+        if (Math.Abs(_wheelAccum) < 100)
+            return;
+        var dir = _wheelAccum > 0 ? 1 : -1;   // wheel up = zoom in (toward Agenda); down = out (toward Year)
+        _wheelAccum = 0;
+        Vm.Zoom(dir);
+    }
+
+    private void OnModeChangedFromVm()
+    {
+        _syncingMode = true;
+        ModeCombo.SelectedIndex = (int)Vm.Mode;
+        _syncingMode = false;
+        FadeContent();
+    }
+
+    private void FadeContent()
+    {
+        var fade = new DoubleAnimation { From = 0.4, To = 1.0, Duration = TimeSpan.FromMilliseconds(160) };
+        Storyboard.SetTarget(fade, CalContent);
+        Storyboard.SetTargetProperty(fade, "Opacity");
+        var sb = new Storyboard();
+        sb.Children.Add(fade);
+        sb.Begin();
+    }
+
+    private void Month_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is CalendarMonthViewModel month)
+            Vm.SelectMonth(month);
     }
 
     private void UpdateEmpty()
@@ -61,15 +113,10 @@ public sealed partial class CalendarPage : Page
 
     private void Mode_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (!IsLoaded)
+        if (_syncingMode || !IsLoaded || ModeCombo.SelectedIndex < 0)
             return;
-        Vm.SetMode(ModeCombo.SelectedIndex switch
-        {
-            1 => CalendarViewMode.Week,
-            2 => CalendarViewMode.Day,
-            3 => CalendarViewMode.Agenda,
-            _ => CalendarViewMode.Month,
-        });
+        // Combo items are in zoom-ladder order, matching the enum (Year=0 … Agenda=4).
+        Vm.SetMode((CalendarViewMode)ModeCombo.SelectedIndex);
     }
 
     private async void Join_Click(object sender, RoutedEventArgs e)

@@ -42,7 +42,7 @@ public sealed class M6_CalendarSmoke
 
             // Switch to Week view → period label becomes a "Week of …".
             var mode = w.FindFirstDescendant(c => c.ByAutomationId("CalendarViewMode"))!.AsComboBox();
-            mode.Select(1);
+            mode.Select("Week");
             Thread.Sleep(400);
             var weekLabel = w.FindFirstDescendant(c => c.ByAutomationId("CalPeriod"))!.AsLabel().Text;
             Assert.Contains("Week", weekLabel);

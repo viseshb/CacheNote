@@ -8,7 +8,8 @@ using CacheNote.Core.Services;
 
 namespace CacheNote.Core.ViewModels;
 
-public enum CalendarViewMode { Month, Week, Day, Agenda }
+// Ordered coarse → fine; the Ctrl+scroll zoom steps along this ladder.
+public enum CalendarViewMode { Year, Month, Week, Day, Agenda }
 
 /// <summary>
 /// Drives the Calendar section: Month (6×7) / Week (1×7) grids, plus Day and Agenda list views.
@@ -22,8 +23,13 @@ public sealed partial class CalendarViewModel : ObservableObject
     private readonly EventService _events;
 
     public ObservableCollection<CalendarDayViewModel> Days { get; } = new();
+    public ObservableCollection<CalendarMonthViewModel> Months { get; } = new();   // Year view tiles
     public ObservableCollection<CalendarEntryViewModel> SelectedDayItems { get; } = new();
     public ObservableCollection<CalendarEntryViewModel> ListItems { get; } = new();
+
+    // Zoom ladder for Ctrl+scroll: Year (most out) … Agenda (most in).
+    private static readonly CalendarViewMode[] ZoomLadder =
+        { CalendarViewMode.Year, CalendarViewMode.Month, CalendarViewMode.Week, CalendarViewMode.Day, CalendarViewMode.Agenda };
     public string[] WeekdayHeaders { get; } = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
     [ObservableProperty]
@@ -42,6 +48,10 @@ public sealed partial class CalendarViewModel : ObservableObject
     /// <summary>Inverse of <see cref="ShowGrid"/> — true for the Day/Agenda list views.</summary>
     [ObservableProperty]
     private bool _showList;
+
+    /// <summary>True for the Year (12-month) overview.</summary>
+    [ObservableProperty]
+    private bool _showYear;
 
     private DateTime _anchor;    // any date inside the shown period (local)
     private DateTime _selected;  // the selected day (local date)
@@ -77,6 +87,7 @@ public sealed partial class CalendarViewModel : ObservableObject
     {
         _anchor = Mode switch
         {
+            CalendarViewMode.Year => _anchor.AddYears(-1),
             CalendarViewMode.Month => _anchor.AddMonths(-1),
             CalendarViewMode.Week => _anchor.AddDays(-7),
             CalendarViewMode.Day => _anchor.AddDays(-1),
@@ -91,6 +102,7 @@ public sealed partial class CalendarViewModel : ObservableObject
     {
         _anchor = Mode switch
         {
+            CalendarViewMode.Year => _anchor.AddYears(1),
             CalendarViewMode.Month => _anchor.AddMonths(1),
             CalendarViewMode.Week => _anchor.AddDays(7),
             CalendarViewMode.Day => _anchor.AddDays(1),
@@ -118,14 +130,65 @@ public sealed partial class CalendarViewModel : ObservableObject
         ShowSelectedItems();
     }
 
+    /// <summary>Ctrl+scroll up = zoom in (toward Agenda); Ctrl+scroll down = zoom out (toward Year).</summary>
+    public void Zoom(int direction)
+    {
+        var i = Array.IndexOf(ZoomLadder, Mode);
+        if (i < 0) i = Array.IndexOf(ZoomLadder, CalendarViewMode.Month);
+        var next = Math.Clamp(i + direction, 0, ZoomLadder.Length - 1);
+        if (ZoomLadder[next] != Mode)
+            SetMode(ZoomLadder[next]);
+    }
+
+    /// <summary>Drill from the Year overview into a specific month.</summary>
+    public void SelectMonth(CalendarMonthViewModel? month)
+    {
+        if (month is null)
+            return;
+        _anchor = month.Date;
+        _selected = month.Date;
+        SetMode(CalendarViewMode.Month);
+    }
+
     private void Rebuild()
     {
+        ShowYear = Mode is CalendarViewMode.Year;
         ShowGrid = Mode is CalendarViewMode.Month or CalendarViewMode.Week;
-        ShowList = !ShowGrid;
-        if (ShowGrid)
+        ShowList = Mode is CalendarViewMode.Day or CalendarViewMode.Agenda;
+        if (ShowYear)
+            BuildYear();
+        else if (ShowGrid)
             BuildGrid();
         else
             BuildList();
+    }
+
+    private void BuildYear()
+    {
+        var yearStart = new DateTime(_anchor.Year, 1, 1);
+        var yearEnd = new DateTime(_anchor.Year, 12, 31);
+        BuildIndex(yearStart, yearEnd);
+
+        Months.Clear();
+        for (var m = 1; m <= 12; m++)
+        {
+            var first = new DateTime(_anchor.Year, m, 1);
+            var last = first.AddMonths(1).AddDays(-1);
+            var count = 0;
+            for (var d = first; d <= last; d = d.AddDays(1))
+                if (_byDay.TryGetValue(d, out var items))
+                    count += items.Count;
+            Months.Add(new CalendarMonthViewModel
+            {
+                Date = first,
+                MonthName = first.ToString("MMMM", CultureInfo.CurrentCulture),
+                ItemCount = count,
+                IsCurrent = first.Year == DateTime.Today.Year && first.Month == DateTime.Today.Month,
+            });
+        }
+
+        PeriodLabel = _anchor.Year.ToString(CultureInfo.CurrentCulture);
+        SelectedDayLabel = PeriodLabel;
     }
 
     private void BuildGrid()
@@ -281,6 +344,19 @@ public sealed partial class CalendarDayViewModel : ObservableObject
     public double DayOpacity => InCurrentMonth ? 1.0 : 0.30;
     public bool HasItems => ItemCount > 0;
     public string CountText => ItemCount > 0 ? ItemCount.ToString(CultureInfo.CurrentCulture) : "";
+}
+
+/// <summary>One month tile in the Year overview.</summary>
+public sealed class CalendarMonthViewModel
+{
+    public DateTime Date { get; init; }
+    public string MonthName { get; init; } = "";
+    public int ItemCount { get; init; }
+    public bool IsCurrent { get; init; }
+    public bool HasItems => ItemCount > 0;
+    public string CountText => ItemCount > 0
+        ? $"{ItemCount} item{(ItemCount == 1 ? "" : "s")}"
+        : "No items";
 }
 
 /// <summary>A task, reminder, or event shown in a day cell / agenda.</summary>

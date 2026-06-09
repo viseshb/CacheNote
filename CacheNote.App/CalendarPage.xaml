@@ -135,8 +135,10 @@
                     x:Name="ModeCombo"
                     MinWidth="110"
                     AutomationProperties.AutomationId="CalendarViewMode"
-                    SelectedIndex="0"
-                    SelectionChanged="Mode_Changed">
+                    SelectedIndex="1"
+                    SelectionChanged="Mode_Changed"
+                    ToolTipService.ToolTip="Ctrl + scroll to zoom views">
+                    <ComboBoxItem Content="Year" />
                     <ComboBoxItem Content="Month" />
                     <ComboBoxItem Content="Week" />
                     <ComboBoxItem Content="Day" />
@@ -165,8 +167,50 @@
             <TextBlock Grid.Column="6" HorizontalAlignment="Center" FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="Sat" />
         </Grid>
 
-        <!-- Main area: grid (Month/Week) OR list (Day/Agenda) -->
-        <Grid Grid.Row="3">
+        <!-- Main area: year (12 months) OR grid (Month/Week) OR list (Day/Agenda). Ctrl+scroll zooms. -->
+        <Grid Grid.Row="3" x:Name="CalContent">
+            <!-- Year overview -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{x:Bind Vm.ShowYear, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                <muxc:ItemsRepeater ItemsSource="{x:Bind Vm.Months}">
+                    <muxc:ItemsRepeater.Layout>
+                        <muxc:UniformGridLayout
+                            ItemsStretch="Fill"
+                            MaximumRowsOrColumns="3"
+                            MinColumnSpacing="10"
+                            MinItemHeight="86"
+                            MinRowSpacing="10"
+                            Orientation="Horizontal" />
+                    </muxc:ItemsRepeater.Layout>
+                    <muxc:ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:CalendarMonthViewModel">
+                            <Button
+                                Padding="0"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch"
+                                VerticalContentAlignment="Stretch"
+                                AutomationProperties.Name="Open month"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Click="Month_Click"
+                                Tag="{x:Bind}">
+                                <Grid>
+                                    <Border Background="{ThemeResource AppSurfaceBrush}" BorderBrush="{ThemeResource AppBorderBrush}" BorderThickness="1" CornerRadius="10" />
+                                    <Border
+                                        BorderBrush="{ThemeResource AppAccentBrush}"
+                                        BorderThickness="2"
+                                        CornerRadius="10"
+                                        Visibility="{x:Bind IsCurrent, Converter={StaticResource BoolToVis}}" />
+                                    <StackPanel Margin="14,12" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{ThemeResource AppTextPrimaryBrush}" Text="{x:Bind MonthName}" />
+                                        <TextBlock FontSize="12" Foreground="{ThemeResource AppTextSecondaryBrush}" Text="{x:Bind CountText}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </muxc:ItemsRepeater.ItemTemplate>
+                </muxc:ItemsRepeater>
+            </ScrollViewer>
+
             <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{x:Bind Vm.ShowGrid, Mode=OneWay, Converter={StaticResource BoolToVis}}">
                 <muxc:ItemsRepeater x:Name="CalendarGrid" AutomationProperties.AutomationId="CalendarGrid" ItemsSource="{x:Bind Vm.Days}">
                     <muxc:ItemsRepeater.Layout>

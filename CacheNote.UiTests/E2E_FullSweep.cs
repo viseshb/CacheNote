@@ -23,9 +23,9 @@ public sealed class E2E_FullSweep
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("calendar"))).AsButton().Invoke();
             Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("CalPeriod"))));
 
-            // Every view renders.
+            // Every view renders (incl. the new Year overview).
             var mode = WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("CalendarViewMode"))).AsComboBox();
-            foreach (var view in new[] { "Week", "Day", "Agenda", "Month" })
+            foreach (var view in new[] { "Year", "Week", "Day", "Agenda", "Month" })
             {
                 mode.Select(view);
                 Thread.Sleep(400);
@@ -33,6 +33,15 @@ public sealed class E2E_FullSweep
                 Assert.NotNull(w.FindFirstDescendant(c => c.ByAutomationId("CalPeriod")));
                 TestApp.Screenshot(w, $"sweep-cal-{view}.png");
             }
+
+            // Year overview shows 12 month tiles; clicking one drills into that month.
+            mode.Select("Year");
+            Thread.Sleep(400);
+            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByName("Open month"))));   // month tiles present
+            WaitFor(() => w.FindFirstDescendant(c => c.ByName("Open month"))).Click();
+            Thread.Sleep(400);
+            Assert.NotNull(w.FindFirstDescendant(c => c.ByAutomationId("CalPeriod")));   // drilled into Month
+            TestApp.Screenshot(w, "sweep-cal-year-drill.png");
 
             // Navigation: prev / next / today.
             foreach (var nav in new[] { "CalPrev", "CalNext", "CalToday" })
