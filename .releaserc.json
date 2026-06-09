@@ -38,7 +38,10 @@
       {
         "assets": [
           { "path": "dist/CacheNoteSetup.exe", "label": "CacheNoteSetup.exe" }
-        ]
+        ],
+        "successComment": false,
+        "failComment": false,
+        "failTitle": false
       }
     ]
   ]
