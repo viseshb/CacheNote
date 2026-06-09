@@ -971,8 +971,23 @@ public sealed partial class MainPage : Page
         var sel = EditorBox.Document.Selection;
         sel.SetRange(_selStart, _selEnd);
         sel.CharacterFormat.ForegroundColor = color;
+        RecolorListMarkers(color);
         ColorBar.Fill = new SolidColorBrush(color);
         _pendingColor = color;
+    }
+
+    // Bullet/number markers take the colour of their list paragraph (not the selected sub-range),
+    // so when the selection is inside a list, recolor the whole list paragraph(s) it touches —
+    // that way the marker changes colour with the text.
+    private void RecolorListMarkers(Color color)
+    {
+        var doc = EditorBox.Document;
+        var sel = doc.Selection;
+        if (sel.ParagraphFormat.ListType == MarkerType.None)
+            return;
+        var para = doc.GetRange(sel.StartPosition, sel.EndPosition);
+        para.Expand(Microsoft.UI.Text.TextRangeUnit.Paragraph);
+        para.CharacterFormat.ForegroundColor = color;
     }
 
     private void CustomColor_ColorChanged(ColorPicker sender, ColorChangedEventArgs args)
@@ -1202,6 +1217,7 @@ public sealed partial class MainPage : Page
             var range = EditorBox.Document.Selection;
             range.SetRange(_selStart, _selEnd);
             range.CharacterFormat.ForegroundColor = last;
+            RecolorListMarkers(last);
             _pendingColor = last;
         }
         ColorOverlay.Children.Clear();

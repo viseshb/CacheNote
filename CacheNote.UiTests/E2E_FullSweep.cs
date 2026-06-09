@@ -84,12 +84,13 @@ public sealed class E2E_FullSweep
             Thread.Sleep(300);
             TestApp.Screenshot(w, "sweep-settings.png");
 
-            // Window modes: compact then restore.
-            w.FindFirstDescendant(c => c.ByAutomationId("CompactButton"))!.AsButton().Invoke();
-            Thread.Sleep(500);
-            WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("RestoreButton"))).AsButton().Invoke();
-            Thread.Sleep(500);
-            Assert.False(app.HasExited);
+            // Window modes: compact, dock left, dock right, restore.
+            foreach (var mode in new[] { "CompactButton", "DockLeftButton", "DockRightButton", "RestoreButton" })
+            {
+                WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId(mode))).AsButton().Invoke();
+                Thread.Sleep(450);
+                Assert.False(app.HasExited, $"app exited on window mode {mode}");
+            }
 
             // Connection-test buttons are present (clicking hits the network — left to manual/live).
             Assert.NotNull(w.FindFirstDescendant(c => c.ByAutomationId("TestAiButton")));
