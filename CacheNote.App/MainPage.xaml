@@ -663,15 +663,6 @@
                         <Button x:Name="PasteImageButton" AutomationProperties.AutomationId="PasteImageButton" Click="PasteImage_Click" Style="{StaticResource ToolButton}" ToolTipService.ToolTip="Paste image from clipboard">
                             <FontIcon FontSize="15" Glyph="&#xE77F;" />
                         </Button>
-
-                        <Rectangle Width="1" Height="20" Margin="4,0" Fill="{ThemeResource AppBorderBrush}" />
-
-                        <Button x:Name="AiButton" AutomationProperties.AutomationId="AiButton" Click="Ai_Click" Style="{StaticResource ToolButton}" ToolTipService.ToolTip="AI assistant (summarize, rephrase, plan)">
-                            <StackPanel Orientation="Horizontal" Spacing="4">
-                                <FontIcon FontSize="14" Glyph="&#xE945;" />
-                                <TextBlock FontSize="13" FontWeight="SemiBold" Text="AI" />
-                            </StackPanel>
-                        </Button>
                             </controls:WrapPanel>
                         </ContentControl>
                     </Grid>

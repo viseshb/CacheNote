@@ -5,14 +5,13 @@ using FlaUI.UIA3;
 namespace CacheNote.UiTests;
 
 /// <summary>
-/// M8 gate smoke (fake provider): AI_PROVIDER=fake → open the global AI ball, type an instruction,
-/// Send to plan (preview), then Apply, which creates content through the real repositories.
-/// The live Gemini/Vertex path needs a key (covered by the gated AiLiveTests).
+/// Reproduces the user's report: after the AI ball plans + Apply, the created content must actually
+/// appear in the Tasks and Reminders sections (not just an "Applied" status). Uses the fake provider.
 /// </summary>
-public sealed class M8_AiSmoke
+public sealed class E2E_AiApply
 {
     [Fact]
-    public void Fake_Plan_Then_Apply()
+    public void Ball_Apply_Creates_Visible_Task_And_Reminder()
     {
         Environment.SetEnvironmentVariable("AI_PROVIDER", "fake");
         var exe = TestApp.FindExe();
@@ -22,19 +21,27 @@ public sealed class M8_AiSmoke
         {
             var w = TestApp.WaitForMainWindow(app, automation);
 
-            // Open the AI ball (available on any section).
+            // Open ball → type → Send → Apply.
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("AiBall"))).AsButton().Invoke();
-
-            var instr = WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("AiChatInput"))?.AsTextBox());
-            instr.Text = "plan my product launch";
+            WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("AiChatInput"))?.AsTextBox()).Text = "set up my launch";
             Thread.Sleep(150);
-
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("AiChatSend"))).AsButton().Invoke();
-            // Acts by default (auto-applies) — no separate Apply step.
+            // Acts by default (auto-applies on send).
             WaitForText(w, "AiStatus", "Applied");
-            TestApp.Screenshot(w, "m8-ai-applied.png");
-
+            TestApp.Screenshot(w, "e2e-aiapply-applied.png");
             w.FindFirstDescendant(c => c.ByAutomationId("AiChatClose"))?.AsButton().Invoke();
+            Thread.Sleep(300);
+
+            // The fake plan creates a task → it must show on the Tasks page.
+            WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("tasks"))).AsButton().Invoke();
+            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByName("Delete task"))));
+            TestApp.Screenshot(w, "e2e-aiapply-tasks.png");
+
+            // …and a reminder → it must show on the Reminders page.
+            WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("BackToHome"))).AsButton().Invoke();
+            WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("reminders"))).AsButton().Invoke();
+            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByName("Delete reminder"))));
+            TestApp.Screenshot(w, "e2e-aiapply-reminders.png");
         }
         finally
         {
@@ -44,21 +51,19 @@ public sealed class M8_AiSmoke
         }
     }
 
-    private static void WaitForText(Window w, string automationId, string contains, int timeoutSeconds = 8)
+    private static void WaitForText(Window w, string automationId, string contains, int timeoutSeconds = 10)
     {
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
         while (DateTime.UtcNow < deadline)
         {
             var el = w.FindFirstDescendant(c => c.ByAutomationId(automationId));
-            var text = el?.Name ?? "";
-            if (text.Contains(contains, StringComparison.OrdinalIgnoreCase))
-                return;
+            if ((el?.Name ?? "").Contains(contains, StringComparison.OrdinalIgnoreCase)) return;
             Thread.Sleep(250);
         }
         throw new TimeoutException($"'{automationId}' never contained '{contains}'.");
     }
 
-    private static T WaitFor<T>(Func<T?> get, int timeoutSeconds = 8) where T : class
+    private static T WaitFor<T>(Func<T?> get, int timeoutSeconds = 10) where T : class
     {
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
         while (DateTime.UtcNow < deadline)

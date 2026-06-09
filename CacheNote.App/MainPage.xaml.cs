@@ -562,124 +562,41 @@ public sealed partial class MainPage : Page
     private static bool IsImageExt(string ext)
         => ext.ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".webp" or ".gif";
 
-    // ----- AI assistant (M8): summarize / rephrase / agentic preview-then-apply -----
-    private async void Ai_Click(object sender, RoutedEventArgs e)
+    // ----- AI assistant (M8): the global AI ball (MainWindow) owns the agentic plan→apply UI and
+    // dictation. It calls back into the open note for summarize / rephrase via these hooks. -----
+    public bool HasActiveNote => Vm.CurrentNoteId != 0;
+    public long? CurrentNoteIdOrNull => Vm.CurrentNoteId == 0 ? null : Vm.CurrentNoteId;
+
+    /// <summary>Summarize the open note and append the summary at the end.</summary>
+    public async Task<string> SummarizeActiveNoteAsync()
     {
         var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
+        EditorBox.Document.GetText(TextGetOptions.None, out var plain);
+        var summary = await svc.SummarizeAsync(plain);
+        var end = EditorBox.Document.GetRange(int.MaxValue, int.MaxValue);
+        end.SetText(TextSetOptions.None, "\n\nSummary: " + summary + "\n");
+        OnContentChanged(this, null!);
+        return "Summary inserted at the end of the note.";
+    }
 
-        var instruction = new TextBox
-        {
-            PlaceholderText = "Tell the AI what to do… e.g. \"plan my trip to Goa\"",
-            AcceptsReturn = true,
-            MinHeight = 64,
-            TextWrapping = TextWrapping.Wrap,
-        };
-        instruction.SetValue(AutomationProperties.AutomationIdProperty, "AiInstruction");
+    /// <summary>Rephrase the editor's current selection in place.</summary>
+    public async Task<string> RephraseSelectionAsync()
+    {
+        var sel = EditorBox.Document.Selection.Text;
+        if (string.IsNullOrWhiteSpace(sel))
+            return "Select some text in the note to rephrase.";
+        var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
+        var rephrased = await svc.RephraseAsync(sel);
+        EditorBox.Document.Selection.SetText(TextSetOptions.None, rephrased);
+        OnContentChanged(this, null!);
+        return "Selection rephrased.";
+    }
 
-        var status = new TextBlock
-        {
-            FontSize = 12,
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AppTextSecondaryBrush"],
-            TextWrapping = TextWrapping.Wrap,
-        };
-        status.SetValue(AutomationProperties.AutomationIdProperty, "AiStatus");
-
-        var actionsPanel = new StackPanel { Spacing = 2 };
-
-        var planButton = new Button { Content = "Plan actions" };
-        planButton.SetValue(AutomationProperties.AutomationIdProperty, "AiPlan");
-        var summarizeButton = new Button { Content = "Summarize note" };
-        var rephraseButton = new Button { Content = "Rephrase selection" };
-
-        var buttonRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        buttonRow.Children.Add(planButton);
-        buttonRow.Children.Add(summarizeButton);
-        buttonRow.Children.Add(rephraseButton);
-
-        var panel = new StackPanel { Width = 380, Spacing = 10 };
-        panel.Children.Add(instruction);
-        panel.Children.Add(buttonRow);
-        panel.Children.Add(status);
-        panel.Children.Add(actionsPanel);
-
-        var dialog = new ContentDialog
-        {
-            Title = "AI assistant",
-            Content = panel,
-            PrimaryButtonText = "Apply",
-            CloseButtonText = "Close",
-            DefaultButton = ContentDialogButton.Close,
-            IsPrimaryButtonEnabled = false,
-            XamlRoot = XamlRoot,
-        };
-
-        if (!svc.IsConfigured)
-        {
-            status.Text = $"AI provider '{svc.Provider}' has no key. Add VERTEX_AI_API_KEY or GEMINI_API_KEY to .env (or set AI_PROVIDER=fake).";
-            planButton.IsEnabled = summarizeButton.IsEnabled = rephraseButton.IsEnabled = false;
-        }
-
-        List<CacheNote.Core.Ai.AiAction> planned = new();
-
-        planButton.Click += async (_, _) =>
-        {
-            if (string.IsNullOrWhiteSpace(instruction.Text)) { status.Text = "Type an instruction first."; return; }
-            status.Text = "Thinking…";
-            actionsPanel.Children.Clear();
-            try
-            {
-                planned = await svc.PlanAsync(instruction.Text.Trim());
-                if (planned.Count == 0) { status.Text = "No actions proposed."; return; }
-                foreach (var a in planned)
-                    actionsPanel.Children.Add(new TextBlock { Text = "• " + a.Describe(), FontSize = 13, TextWrapping = TextWrapping.Wrap });
-                status.Text = $"Planned {planned.Count} action(s). Review, then Apply.";
-                dialog.IsPrimaryButtonEnabled = true;
-            }
-            catch (Exception ex) { status.Text = "AI error: " + ex.Message; }
-        };
-
-        summarizeButton.Click += async (_, _) =>
-        {
-            status.Text = "Summarizing…";
-            try
-            {
-                EditorBox.Document.GetText(TextGetOptions.None, out var plain);
-                var summary = await svc.SummarizeAsync(plain);
-                var end = EditorBox.Document.GetRange(int.MaxValue, int.MaxValue);
-                end.SetText(TextSetOptions.None, "\n\nSummary: " + summary + "\n");
-                OnContentChanged(this, null!);
-                status.Text = "Summary inserted at the end of the note.";
-            }
-            catch (Exception ex) { status.Text = "AI error: " + ex.Message; }
-        };
-
-        rephraseButton.Click += async (_, _) =>
-        {
-            var sel = EditorBox.Document.Selection.Text;
-            if (string.IsNullOrWhiteSpace(sel)) { status.Text = "Select some text to rephrase."; return; }
-            status.Text = "Rephrasing…";
-            try
-            {
-                var rephrased = await svc.RephraseAsync(sel);
-                EditorBox.Document.Selection.SetText(TextSetOptions.None, rephrased);
-                OnContentChanged(this, null!);
-                status.Text = "Selection rephrased.";
-            }
-            catch (Exception ex) { status.Text = "AI error: " + ex.Message; }
-        };
-
-        dialog.PrimaryButtonClick += (_, args) =>
-        {
-            if (planned.Count == 0) return;
-            var summary = svc.Apply(planned, Vm.CurrentNoteId == 0 ? null : Vm.CurrentNoteId);
-            status.Text = summary;
-            dialog.IsPrimaryButtonEnabled = false;
-            args.Cancel = true;   // keep the dialog open so the result is visible
-            Vm.LoadList();
-            RefreshTagFilter();
-        };
-
-        await dialog.ShowAsync();
+    /// <summary>Refresh the notes list + tag filter after the AI applied actions.</summary>
+    public void ReloadAfterAi()
+    {
+        Vm.LoadList();
+        RefreshTagFilter();
     }
 
     // ----- list management -----
@@ -1169,24 +1086,37 @@ public sealed partial class MainPage : Page
 
     private async Task StartDictationAsync()
     {
+        if (_stt is not null)
+            return;   // already listening — ignore a duplicate start
+
         var factory = App.GetService<ISpeechToTextFactory>();
-        _stt = factory.Create();
-        if (!_stt.IsConfigured)
+        var stt = factory.Create();
+        if (!stt.IsConfigured)
         {
             DictationStatus.Text = $"Add an API key for '{factory.Provider}' in .env to dictate.";
             MicButton.IsChecked = false;
-            _stt = null;
             return;
         }
 
-        _stt.PartialReceived += OnSttPartial;
-        _stt.FinalReceived += OnSttFinal;
-        _stt.ErrorOccurred += OnSttError;
+        _stt = stt;
+        // Only one dictation session at a time (editor mic vs. AI ball) — stop the other first.
+        await DictationCoordinator.ClaimAsync(this, StopDictationAsync);
 
-        await _stt.StartAsync(CancellationToken.None);
+        stt.PartialReceived += OnSttPartial;
+        stt.FinalReceived += OnSttFinal;
+        stt.ErrorOccurred += OnSttError;
+
+        await stt.StartAsync(CancellationToken.None);
+
+        // Toggled off (or another session claimed the mic) during startup → stop cleanly.
+        if (MicButton.IsChecked != true || !ReferenceEquals(_stt, stt))
+        {
+            await StopDictationAsync();
+            return;
+        }
+
         DictationStatus.Text = "Listening…";
-
-        if (_stt.NeedsMicrophone)
+        if (stt.NeedsMicrophone)
         {
             _mic = new MicCaptureService();
             _mic.FrameReady += OnMicFrame;
@@ -1240,6 +1170,7 @@ public sealed partial class MainPage : Page
             await _stt.StopAsync();
             _stt = null;
         }
+        DictationCoordinator.Release(this);
         DictationStatus.Text = "";
         if (MicButton.IsChecked == true)
             MicButton.IsChecked = false;

@@ -14,7 +14,16 @@ internal static class TestApp
 {
     // The harness launches the exe repeatedly and needs a fresh process each time, so it
     // bypasses single-instance redirection. Child processes inherit this environment var.
-    static TestApp() => Environment.SetEnvironmentVariable("CacheNote_NO_SINGLE_INSTANCE", "1");
+    static TestApp()
+    {
+        Environment.SetEnvironmentVariable("CacheNote_NO_SINGLE_INSTANCE", "1");
+        // Keep the startup update check (and its blocking "Update available" dialog) out of UI runs.
+        Environment.SetEnvironmentVariable("CacheNote_NO_UPDATE_CHECK", "1");
+        // Isolate the test database so UI tests never pollute the user's real app data. One dir per
+        // run (set once) so restart-persistence tests still share a DB across relaunches.
+        Environment.SetEnvironmentVariable("CacheNote_DATA_DIR",
+            Path.Combine(Path.GetTempPath(), "CacheNote-uitests", Guid.NewGuid().ToString("N")));
+    }
 
     public static string FindExe()
     {
@@ -27,9 +36,10 @@ internal static class TestApp
         if (!Directory.Exists(appBin))
             throw new FileNotFoundException($"App bin folder not found at {appBin}. Build CacheNote.App first.");
 
-        var exe = Directory.GetFiles(appBin, "CacheNote.App.exe", SearchOption.AllDirectories)
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
+        var all = Directory.GetFiles(appBin, "CacheNote.App.exe", SearchOption.AllDirectories);
+        // Prefer the Debug win-x64 build (the one we run for the user) so tests + app stay in lockstep.
+        var exe = all.FirstOrDefault(p => p.Contains("win-x64") && p.Contains("Debug"))
+            ?? all.OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
 
         return exe ?? throw new FileNotFoundException("CacheNote.App.exe not found. Build CacheNote.App first.");
     }

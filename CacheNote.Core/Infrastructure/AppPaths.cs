@@ -35,7 +35,9 @@ public sealed class AppPaths : IAppPaths
         Root = (rootOverride ?? AppContext.BaseDirectory)
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-        DataDir = Path.Combine(Root, "data");
+        // Optional data-dir override (UI tests set this so they never write to the real app DB).
+        var dataOverride = Environment.GetEnvironmentVariable("CacheNote_DATA_DIR");
+        DataDir = string.IsNullOrWhiteSpace(dataOverride) ? Path.Combine(Root, "data") : dataOverride;
         AttachmentsDir = Path.Combine(Root, "attachments");
         ConfigDir = Path.Combine(Root, "config");
         LogsDir = Path.Combine(Root, "logs");

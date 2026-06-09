@@ -91,6 +91,88 @@
                     </Setter.Value>
                 </Setter>
             </Style>
+
+            <!-- Floating AI ball: circular, gradient, springy hover/press. -->
+            <Style x:Key="AiBallStyle" TargetType="Button">
+                <Setter Property="Width" Value="56" />
+                <Setter Property="Height" Value="56" />
+                <Setter Property="CornerRadius" Value="28" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Background" Value="{ThemeResource AiBallBrush}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border
+                                x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{ThemeResource AiBallBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{TemplateBinding CornerRadius}"
+                                RenderTransformOrigin="0.5,0.5">
+                                <Border.RenderTransform>
+                                    <ScaleTransform x:Name="BallScale" ScaleX="1" ScaleY="1" />
+                                </Border.RenderTransform>
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="BallScale" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.12" />
+                                                <DoubleAnimation Storyboard.TargetName="BallScale" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.12" />
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="PointerOver">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="BallScale" Storyboard.TargetProperty="ScaleX" To="1.08" Duration="0:0:0.12" />
+                                                <DoubleAnimation Storyboard.TargetName="BallScale" Storyboard.TargetProperty="ScaleY" To="1.08" Duration="0:0:0.12" />
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="BallScale" Storyboard.TargetProperty="ScaleX" To="0.92" Duration="0:0:0.08" />
+                                                <DoubleAnimation Storyboard.TargetName="BallScale" Storyboard.TargetProperty="ScaleY" To="0.92" Duration="0:0:0.08" />
+                                            </Storyboard>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Content="{TemplateBinding Content}" />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Accent action button (AI Apply / Send). -->
+            <Style x:Key="AiAccentButton" TargetType="Button">
+                <Setter Property="Background" Value="{ThemeResource AppAccentBrush}" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="12,6" />
+                <Setter Property="HorizontalAlignment" Value="Left" />
+            </Style>
+
+            <!-- Dynamic-island open: scale + fade the panel up from the ball's corner; fade the ball out. -->
+            <Storyboard x:Key="AiOpenStoryboard">
+                <DoubleAnimation Storyboard.TargetName="AiPanelScale" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.22">
+                    <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut" /></DoubleAnimation.EasingFunction>
+                </DoubleAnimation>
+                <DoubleAnimation Storyboard.TargetName="AiPanelScale" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.22">
+                    <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut" /></DoubleAnimation.EasingFunction>
+                </DoubleAnimation>
+                <DoubleAnimation Storyboard.TargetName="AiPanel" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.18" />
+                <DoubleAnimation Storyboard.TargetName="AiBall" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.12" />
+            </Storyboard>
+            <Storyboard x:Key="AiCloseStoryboard">
+                <DoubleAnimation Storyboard.TargetName="AiPanelScale" Storyboard.TargetProperty="ScaleX" To="0.2" Duration="0:0:0.16">
+                    <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseIn" /></DoubleAnimation.EasingFunction>
+                </DoubleAnimation>
+                <DoubleAnimation Storyboard.TargetName="AiPanelScale" Storyboard.TargetProperty="ScaleY" To="0.2" Duration="0:0:0.16">
+                    <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseIn" /></DoubleAnimation.EasingFunction>
+                </DoubleAnimation>
+                <DoubleAnimation Storyboard.TargetName="AiPanel" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.14" />
+                <DoubleAnimation Storyboard.TargetName="AiBall" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.18" />
+            </Storyboard>
         </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -168,6 +250,134 @@
             navigation events and the Loaded lifecycle.
         -->
         <Frame x:Name="RootFrame" Grid.Row="1" />
+
+        <!-- Global AI assistant: a floating ball (bottom-right, above page content) that expands,
+             dynamic-island style, into an inline chat. Available on every section. -->
+        <Grid Grid.Row="1" Margin="0,0,0,0">
+            <Button
+                x:Name="AiBall"
+                Margin="0,0,24,24"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                AutomationProperties.AutomationId="AiBall"
+                AutomationProperties.Name="AI assistant"
+                Click="AiBall_Click"
+                Style="{StaticResource AiBallStyle}"
+                ToolTipService.ToolTip="AI assistant — create notes, tasks &amp; more">
+                <FontIcon FontSize="20" Foreground="{ThemeResource AiBallForegroundBrush}" Glyph="&#xE8BD;" />
+            </Button>
+
+            <Border
+                x:Name="AiPanel"
+                Width="360"
+                MaxHeight="540"
+                Margin="0,0,24,24"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                AutomationProperties.AutomationId="AiChatPanel"
+                Background="{ThemeResource AppSurfaceBrush}"
+                BorderBrush="{ThemeResource AppBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="18"
+                IsHitTestVisible="False"
+                Opacity="0"
+                RenderTransformOrigin="1,1"
+                Visibility="Collapsed">
+                <Border.RenderTransform>
+                    <ScaleTransform x:Name="AiPanelScale" ScaleX="0.2" ScaleY="0.2" />
+                </Border.RenderTransform>
+
+                <Grid Padding="16" RowSpacing="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <Grid Grid.Row="0">
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <FontIcon FontSize="15" Foreground="{ThemeResource AppTextPrimaryBrush}" Glyph="&#xE8BD;" />
+                            <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{ThemeResource AppTextPrimaryBrush}" Text="AI Assistant" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Button
+                            x:Name="AiClose"
+                            HorizontalAlignment="Right"
+                            AutomationProperties.AutomationId="AiChatClose"
+                            AutomationProperties.Name="Close AI assistant"
+                            Click="AiClose_Click"
+                            Style="{StaticResource TitleBarButton}"
+                            ToolTipService.ToolTip="Close">
+                            <FontIcon FontSize="13" Glyph="&#xE711;" />
+                        </Button>
+                    </Grid>
+
+                    <!-- Conversation / preview -->
+                    <ScrollViewer x:Name="AiScroll" Grid.Row="1" MinHeight="120" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="8">
+                            <TextBlock
+                                x:Name="AiStatus"
+                                AutomationProperties.AutomationId="AiStatus"
+                                Foreground="{ThemeResource AppTextSecondaryBrush}"
+                                Text="Ask me to create notes, tasks, reminders, calendar events, or favorites — type below or use the mic."
+                                TextWrapping="Wrap" />
+                            <StackPanel x:Name="AiConversation" Spacing="4" />
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Note-context quick actions -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="AiSummarize" AutomationProperties.AutomationId="AiSummarize" Click="AiSummarize_Click" Content="Summarize note" FontSize="12" />
+                        <Button x:Name="AiRephrase" AutomationProperties.AutomationId="AiRephrase" Click="AiRephrase_Click" Content="Rephrase selection" FontSize="12" />
+                    </StackPanel>
+
+                    <!-- Input row: type or dictate -->
+                    <Grid Grid.Row="3" ColumnSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            x:Name="AiInput"
+                            Grid.Column="0"
+                            MaxHeight="100"
+                            AcceptsReturn="False"
+                            AutomationProperties.AutomationId="AiChatInput"
+                            AutomationProperties.Name="Ask AI"
+                            KeyDown="AiInput_KeyDown"
+                            PlaceholderText="Ask AI to do something…"
+                            TextWrapping="Wrap" />
+                        <ToggleButton
+                            x:Name="AiMic"
+                            Grid.Column="1"
+                            Width="40"
+                            Height="36"
+                            Padding="0"
+                            AutomationProperties.AutomationId="AiChatMic"
+                            AutomationProperties.Name="Dictate"
+                            Click="AiMic_Click"
+                            ToolTipService.ToolTip="Dictate (speech to text)">
+                            <FontIcon FontSize="15" Glyph="&#xE720;" />
+                        </ToggleButton>
+                        <Button
+                            x:Name="AiSend"
+                            Grid.Column="2"
+                            Width="40"
+                            Height="36"
+                            Padding="0"
+                            AutomationProperties.AutomationId="AiChatSend"
+                            AutomationProperties.Name="Send"
+                            Click="AiSend_Click"
+                            Style="{StaticResource AiAccentButton}"
+                            ToolTipService.ToolTip="Send">
+                            <FontIcon FontSize="15" Foreground="White" Glyph="&#xE724;" />
+                        </Button>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
 
         <!-- System tray icon (renders nothing in-window). Left-click opens; right-click = menu. -->
         <tb:TaskbarIcon

@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
 using CommunityToolkit.Mvvm.Input;
 using H.NotifyIcon;
 using Microsoft.UI;
@@ -8,7 +10,11 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
+using CacheNote.Core.Ai;
 using CacheNote.Core.Services;
+using CacheNote.Core.Speech;
 using CacheNote_App.Services;
 using CacheNote_App.Interop;
 using Windows.Graphics;
@@ -25,6 +31,7 @@ namespace CacheNote_App;
 public sealed partial class MainWindow : Window
 {
     private const string ThemeKey = "theme";
+    private const string SkippedUpdateKey = "update_skipped_version";
 
     // Segoe Fluent glyphs (built from code points so the source stays plain ASCII).
     private static readonly string SunGlyph = ((char)0xE706).ToString();   // shown in dark mode → click for light
@@ -51,10 +58,20 @@ public sealed partial class MainWindow : Window
         // single-pane notes) still render without overlap. Scaled by the display's
         // rasterization scale so the floor is honored at 150%/200% DPI too.
         RootGrid.Loaded += (_, _) => ApplyMinWindowSize();
+        // Keep the AI chat panel inside the window at every width/height (it must not clip the
+        // left edge at the 380px minimum, nor overflow the bottom at the 520px minimum).
+        RootGrid.SizeChanged += (_, e) => AdjustAiPanel(e.NewSize.Width, e.NewSize.Height);
         // Cloud build/publish (GitHub Actions) + auto-check on launch → offer one-click update.
         RootGrid.Loaded += async (_, _) => await StartupUpdateCheckAsync();
 
         RootFrame.Navigate(typeof(HomePage));
+
+        // When the AI panel finishes closing, fully collapse it (so its controls aren't hit-testable).
+        ((Storyboard)RootGrid.Resources["AiCloseStoryboard"]).Completed += (_, _) =>
+        {
+            if (!_aiOpen)
+                AiPanel.Visibility = Visibility.Collapsed;
+        };
 
         // Restore the saved theme (defaults to following the system).
         var saved = App.GetService<ISettingsService>().Get(ThemeKey, nameof(ElementTheme.Default));
@@ -66,6 +83,11 @@ public sealed partial class MainWindow : Window
     private bool _exiting;
     private bool _pinSync;   // guards the title-bar always-on-top toggle from feedback loops
     private GlobalHotkey? _hotkey;
+
+    // Under UI automation, don't persist/restore window geometry: a resize test would otherwise
+    // leak a tiny window into the next test (compact mode hides wide-layout controls → cascade).
+    private static readonly bool TestMode =
+        Environment.GetEnvironmentVariable("CacheNote_NO_SINGLE_INSTANCE") == "1";
 
     /// <summary>Enforce a minimum window size (in DIPs, converted to physical px for the presenter).</summary>
     private void ApplyMinWindowSize()
@@ -229,6 +251,275 @@ public sealed partial class MainWindow : Window
         AlwaysOnTopItem.IsChecked = on;
     }
 
+    // ----- global AI assistant ("ball") -----
+    private bool _aiOpen;
+    private readonly List<string> _aiHistory = new();   // running transcript for multi-turn context
+    private ISpeechToTextService? _aiStt;
+    private MicCaptureService? _aiMic;
+
+    /// <summary>Size the floating chat panel to fit inside the window at any width/height.</summary>
+    private void AdjustAiPanel(double width, double height)
+    {
+        if (AiPanel is null)
+            return;
+        AiPanel.Width = Math.Clamp(width - 48, 260, 360);          // 24px margin each side
+        AiPanel.MaxHeight = Math.Max(260, height - 100);            // leave room for the title bar
+    }
+
+    private void AiBall_Click(object sender, RoutedEventArgs e) => OpenAi();
+
+    private void AiClose_Click(object sender, RoutedEventArgs e) => CloseAi();
+
+    private void OpenAi()
+    {
+        if (_aiOpen)
+            return;
+        _aiOpen = true;
+        AiPanel.Visibility = Visibility.Visible;
+        AiPanel.IsHitTestVisible = true;
+        AiBall.IsHitTestVisible = false;
+        ((Storyboard)RootGrid.Resources["AiOpenStoryboard"]).Begin();
+        AiInput.Focus(FocusState.Programmatic);
+    }
+
+    private void CloseAi()
+    {
+        if (!_aiOpen)
+            return;
+        _aiOpen = false;
+        AiPanel.IsHitTestVisible = false;
+        AiBall.IsHitTestVisible = true;
+        _ = StopAiDictationAsync();
+        ((Storyboard)RootGrid.Resources["AiCloseStoryboard"]).Begin();   // Completed → collapse
+    }
+
+    private void AiInput_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Enter)
+        {
+            e.Handled = true;
+            _ = PlanAsync();
+        }
+    }
+
+    private async void AiSend_Click(object sender, RoutedEventArgs e) => await PlanAsync();
+
+    private async System.Threading.Tasks.Task PlanAsync()
+    {
+        var svc = App.GetService<AiAssistService>();
+        var text = AiInput.Text?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            AiStatus.Text = "Type or say what you'd like me to do.";
+            return;
+        }
+        if (!svc.IsConfigured)
+        {
+            AiStatus.Text = $"AI provider '{svc.Provider}' has no key. Add VERTEX_AI_API_KEY or GEMINI_API_KEY to .env (or set AI_PROVIDER=fake).";
+            return;
+        }
+
+        AppendChatBubble(text, fromUser: true);
+        _aiHistory.Add("User: " + text);
+        AiInput.Text = "";
+        AiStatus.Text = "Thinking…";
+        ScrollAiToEnd();
+
+        try
+        {
+            var plan = await svc.PlanAsync(string.Join("\n", _aiHistory));
+            if (!string.IsNullOrWhiteSpace(plan.Reply))
+            {
+                AppendChatBubble(plan.Reply, fromUser: false);
+                _aiHistory.Add("Assistant: " + plan.Reply);
+            }
+
+            if (plan.Actions.Count > 0)
+            {
+                // Act by default — apply immediately, then show what was created.
+                long? noteId = (RootFrame.Content as MainPage)?.CurrentNoteIdOrNull;
+                var summary = svc.Apply(plan.Actions, noteId);
+                AiConversation.Children.Add(new TextBlock
+                {
+                    Text = "✓ " + summary,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(8, 0, 0, 2),
+                    Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"],
+                });
+                AiStatus.Text = summary;             // starts with "Applied"
+                _aiHistory.Add("Assistant: " + summary);
+                RefreshAfterAi();
+            }
+            else
+            {
+                AiStatus.Text = "";   // a clarifying question — wait for the user's reply
+            }
+            ScrollAiToEnd();
+        }
+        catch (Exception ex)
+        {
+            AiStatus.Text = "AI error: " + ex.Message;
+        }
+    }
+
+    /// <summary>Append a chat bubble: user bubbles right + accent, assistant bubbles left + subtle.</summary>
+    private void AppendChatBubble(string text, bool fromUser)
+    {
+        AiConversation.Children.Add(new Border
+        {
+            Background = (Brush)Application.Current.Resources[fromUser ? "AppAccentBrush" : "AppHoverBrush"],
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(10, 6, 10, 6),
+            MaxWidth = 270,
+            HorizontalAlignment = fromUser ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+            Child = new TextBlock
+            {
+                Text = text,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 13,
+                Foreground = fromUser ? new SolidColorBrush(Microsoft.UI.Colors.White) : (Brush)Application.Current.Resources["AppTextPrimaryBrush"],
+            },
+        });
+    }
+
+    private void ScrollAiToEnd()
+    {
+        AiScroll.UpdateLayout();
+        AiScroll.ChangeView(null, AiScroll.ScrollableHeight, null);
+    }
+
+    private async void AiSummarize_Click(object sender, RoutedEventArgs e)
+    {
+        if (RootFrame.Content is not MainPage mp || !mp.HasActiveNote)
+        {
+            AiStatus.Text = "Open a note first to summarize it.";
+            return;
+        }
+        AiStatus.Text = "Summarizing…";
+        try { AiStatus.Text = await mp.SummarizeActiveNoteAsync(); }
+        catch (Exception ex) { AiStatus.Text = "AI error: " + ex.Message; }
+    }
+
+    private async void AiRephrase_Click(object sender, RoutedEventArgs e)
+    {
+        if (RootFrame.Content is not MainPage mp || !mp.HasActiveNote)
+        {
+            AiStatus.Text = "Open a note and select some text to rephrase.";
+            return;
+        }
+        AiStatus.Text = "Rephrasing…";
+        try { AiStatus.Text = await mp.RephraseSelectionAsync(); }
+        catch (Exception ex) { AiStatus.Text = "AI error: " + ex.Message; }
+    }
+
+    /// <summary>Reload whichever section is showing so AI-created content appears immediately.</summary>
+    private void RefreshAfterAi()
+    {
+        switch (RootFrame.Content)
+        {
+            case MainPage mp: mp.ReloadAfterAi(); break;
+            case TasksPage tp: tp.Reload(); break;
+        }
+    }
+
+    // ----- AI ball dictation (shares the single-session DictationCoordinator with the editor mic) -----
+    private async void AiMic_Click(object sender, RoutedEventArgs e)
+    {
+        if (AiMic.IsChecked == true)
+            await StartAiDictationAsync();
+        else
+            await StopAiDictationAsync();
+    }
+
+    private async System.Threading.Tasks.Task StartAiDictationAsync()
+    {
+        if (_aiStt is not null)
+            return;   // already listening — ignore a duplicate start
+
+        var factory = App.GetService<ISpeechToTextFactory>();
+        var stt = factory.Create();
+        if (!stt.IsConfigured)
+        {
+            AiStatus.Text = $"Add an API key for '{factory.Provider}' in .env to dictate.";
+            AiMic.IsChecked = false;
+            return;
+        }
+
+        _aiStt = stt;
+        await DictationCoordinator.ClaimAsync(this, StopAiDictationAsync);
+        stt.PartialReceived += OnAiSttPartial;
+        stt.FinalReceived += OnAiSttFinal;
+        stt.ErrorOccurred += OnAiSttError;
+        await stt.StartAsync(CancellationToken.None);
+
+        // If the user toggled the mic off (or another session claimed it) during startup, stop cleanly.
+        if (AiMic.IsChecked != true || !ReferenceEquals(_aiStt, stt))
+        {
+            await StopAiDictationAsync();
+            return;
+        }
+
+        AiStatus.Text = "Listening…";
+        if (stt.NeedsMicrophone)
+        {
+            _aiMic = new MicCaptureService();
+            _aiMic.FrameReady += OnAiMicFrame;
+            if (!_aiMic.Start(msg => DispatcherQueue.TryEnqueue(() => AiStatus.Text = msg)))
+                await StopAiDictationAsync();
+        }
+    }
+
+    private async void OnAiMicFrame(byte[] frame)
+    {
+        if (_aiStt is not null)
+            try { await _aiStt.SendAsync(frame); } catch { /* dropped frame */ }
+    }
+
+    private void OnAiSttPartial(string text)
+        => DispatcherQueue.TryEnqueue(() => AiStatus.Text = "… " + text);
+
+    private void OnAiSttFinal(string text)
+        => DispatcherQueue.TryEnqueue(() =>
+        {
+            AppendAiInput(text);
+            AiStatus.Text = "Listening… (tap Send when ready)";
+        });
+
+    private void OnAiSttError(string message)
+        => DispatcherQueue.TryEnqueue(() => AiStatus.Text = message);
+
+    private void AppendAiInput(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+        var sep = AiInput.Text.Length == 0 || AiInput.Text.EndsWith(' ') ? "" : " ";
+        AiInput.Text += sep + text.Trim();
+    }
+
+    private async System.Threading.Tasks.Task StopAiDictationAsync()
+    {
+        if (_aiMic is not null)
+        {
+            _aiMic.FrameReady -= OnAiMicFrame;
+            _aiMic.Dispose();
+            _aiMic = null;
+        }
+        if (_aiStt is not null)
+        {
+            _aiStt.PartialReceived -= OnAiSttPartial;
+            _aiStt.FinalReceived -= OnAiSttFinal;
+            _aiStt.ErrorOccurred -= OnAiSttError;
+            try { await _aiStt.StopAsync(); } catch { /* best effort */ }
+            _aiStt = null;
+        }
+        DictationCoordinator.Release(this);
+        if (AiMic.IsChecked == true)
+            AiMic.IsChecked = false;
+        if (AiStatus.Text == "Listening…" || AiStatus.Text.StartsWith("… "))
+            AiStatus.Text = "";   // clear the listening indicator so it doesn't stick
+    }
+
     private void Tray_Exit(object sender, RoutedEventArgs e)
     {
         _exiting = true;
@@ -247,11 +538,22 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            // Skip the network check (and its modal dialog) under UI automation so tests are
+            // deterministic and a dev build's lower version doesn't pop a blocking dialog.
+            if (Environment.GetEnvironmentVariable("CacheNote_NO_UPDATE_CHECK") == "1")
+                return;
+
             var svc = App.GetService<GitHubUpdateService>();
             if (!svc.IsConfigured)
                 return;
             var result = await svc.CheckAsync();
             if (!result.Available || string.IsNullOrEmpty(result.DownloadUrl))
+                return;
+
+            // Don't nag on every launch: once the user dismisses a given version, stay quiet for it
+            // (the title-bar Update button still updates on demand). A newer release re-prompts.
+            var settings = App.GetService<ISettingsService>();
+            if (settings.Get(SkippedUpdateKey, "") == result.LatestVersion)
                 return;
 
             var dialog = new ContentDialog
@@ -263,8 +565,10 @@ public sealed partial class MainWindow : Window
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = RootGrid.XamlRoot,
             };
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            if (await DialogHost.ShowAsync(dialog) == ContentDialogResult.Primary)
                 await svc.DownloadAndRunAsync(result.DownloadUrl!);
+            else
+                settings.Set(SkippedUpdateKey, result.LatestVersion);   // remember the dismissal
         }
         catch { /* never block startup on the update check */ }
     }
@@ -273,7 +577,9 @@ public sealed partial class MainWindow : Window
     {
         var svc = App.GetService<GitHubUpdateService>();
         var panel = new StackPanel { Width = 300, Spacing = 8 };
-        var status = new TextBlock { Text = "Checking for updates…", TextWrapping = TextWrapping.Wrap };
+        // Show the installed version immediately so the dialog is informative before the network
+        // check returns (and so it doesn't depend on GitHub latency).
+        var status = new TextBlock { Text = $"Installed version: {svc.CurrentVersion}\n\nChecking for updates…", TextWrapping = TextWrapping.Wrap };
         status.SetValue(AutomationProperties.AutomationIdProperty, "UpdateStatus");
         panel.Children.Add(status);
 
@@ -284,10 +590,10 @@ public sealed partial class MainWindow : Window
             CloseButtonText = "Close",
             XamlRoot = RootGrid.XamlRoot,
         };
-        _ = dialog.ShowAsync();
+        _ = DialogHost.ShowAsync(dialog);
 
         var result = await svc.CheckAsync();
-        status.Text = $"{result.Message}\n\nInstalled version: {svc.CurrentVersion}";
+        status.Text = $"Installed version: {svc.CurrentVersion}\n\n{result.Message}";
 
         if (result.Available && !string.IsNullOrEmpty(result.DownloadUrl))
         {
@@ -382,6 +688,8 @@ public sealed partial class MainWindow : Window
 
     private bool RestoreWindowState()
     {
+        if (TestMode)
+            return false;   // always launch at the default size during automation
         var s = App.GetService<ISettingsService>();
         int w = s.GetInt("win_w"), h = s.GetInt("win_h");
         int x = s.GetInt("win_x", int.MinValue), y = s.GetInt("win_y", int.MinValue);
@@ -405,6 +713,8 @@ public sealed partial class MainWindow : Window
 
     private void SaveWindowState()
     {
+        if (TestMode)
+            return;   // don't let one test's geometry leak into the next
         var s = App.GetService<ISettingsService>();
         var pos = AppWindow.Position;
         var size = AppWindow.Size;

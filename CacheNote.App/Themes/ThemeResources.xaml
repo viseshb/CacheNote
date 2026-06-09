@@ -32,6 +32,14 @@
             <SolidColorBrush x:Key="AppHoverBrush" Color="{StaticResource AppHoverColor}" />
             <SolidColorBrush x:Key="AppPressedBrush" Color="{StaticResource AppPressedColor}" />
 
+            <!-- AI assistant ball: a polished obsidian bead (single-hue depth, not an AI rainbow). -->
+            <LinearGradientBrush x:Key="AiBallBrush" StartPoint="0.5,0" EndPoint="0.5,1">
+                <GradientStop Offset="0" Color="#27272D" />
+                <GradientStop Offset="1" Color="#151517" />
+            </LinearGradientBrush>
+            <SolidColorBrush x:Key="AiBallForegroundBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="AiBallBorderBrush" Color="#33FFFFFF" />
+
             <!-- Round every framework control (buttons, combos, list selection, text boxes…). -->
             <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
             <CornerRadius x:Key="OverlayCornerRadius">10</CornerRadius>
@@ -57,6 +65,14 @@
             <SolidColorBrush x:Key="AppHoverBrush" Color="{StaticResource AppHoverColor}" />
             <SolidColorBrush x:Key="AppPressedBrush" Color="{StaticResource AppPressedColor}" />
 
+            <!-- AI assistant ball: a polished pearl bead so it reads premium on dark Mica. -->
+            <LinearGradientBrush x:Key="AiBallBrush" StartPoint="0.5,0" EndPoint="0.5,1">
+                <GradientStop Offset="0" Color="#FFFFFF" />
+                <GradientStop Offset="1" Color="#E6E6EA" />
+            </LinearGradientBrush>
+            <SolidColorBrush x:Key="AiBallForegroundBrush" Color="#161618" />
+            <SolidColorBrush x:Key="AiBallBorderBrush" Color="#1F000000" />
+
             <!-- Round every framework control (buttons, combos, list selection, text boxes…). -->
             <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
             <CornerRadius x:Key="OverlayCornerRadius">10</CornerRadius>
@@ -78,6 +94,10 @@
             <SolidColorBrush x:Key="AppAccentBrush" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="AppHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="AppPressedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+
+            <SolidColorBrush x:Key="AiBallBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="AiBallForegroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="AiBallBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
 
             <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
             <CornerRadius x:Key="OverlayCornerRadius">10</CornerRadius>

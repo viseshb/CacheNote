@@ -177,7 +177,7 @@ public sealed partial class CalendarPage : Page
         };
         dialog.SetValue(Microsoft.UI.Xaml.Automation.AutomationProperties.AutomationIdProperty, "EventDialog");
 
-        var result = await dialog.ShowAsync();
+        var result = await DialogHost.ShowAsync(dialog);
 
         if (result == ContentDialogResult.Primary)
         {

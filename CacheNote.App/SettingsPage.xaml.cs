@@ -167,7 +167,7 @@ public sealed partial class SettingsPage : Page
             CloseButtonText = "OK",
             XamlRoot = XamlRoot,
         };
-        await dlg.ShowAsync();
+        await DialogHost.ShowAsync(dlg);
     }
 
     private void Back_Click(object sender, RoutedEventArgs e)

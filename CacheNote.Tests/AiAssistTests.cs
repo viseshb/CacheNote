@@ -36,6 +36,44 @@ public sealed class AiAssistTests : IDisposable
     }
 
     [Fact]
+    public void ParsePlan_ReadsReplyAndActions()
+    {
+        var raw = "```json\n{\"reply\":\"Sure!\",\"actions\":[{\"action\":\"create_reminder\",\"title\":\"Call mom\",\"date\":\"2026-07-01\"}]}\n```";
+        var plan = AiAssistService.ParsePlan(raw);
+        Assert.Equal("Sure!", plan.Reply);
+        Assert.Single(plan.Actions);
+        Assert.Equal("create_reminder", plan.Actions[0].Action);
+    }
+
+    [Fact]
+    public void Apply_CreatesReminder_Event_And_FavoriteNote()
+    {
+        var notes = new NoteRepository(_factory);
+        var reminderRepo = new ReminderRepository(_factory);
+        var reminders = new ReminderService(reminderRepo);
+        var events = new EventService(new EventRepository(_factory), reminderRepo);
+        var executor = new AiActionExecutor(notes, new ChecklistRepository(_factory),
+            new TaskService(new TaskRepository(_factory)), new TagService(new TagRepository(_factory)),
+            events, reminders);
+
+        var actions = new List<AiAction>
+        {
+            new() { Action = AiActionKinds.CreateNote, Title = "Pinned idea", Favorite = true },
+            new() { Action = AiActionKinds.CreateReminder, Title = "Standup", Date = "2026-07-01", Time = "09:00", Repeat = "daily" },
+            new() { Action = AiActionKinds.CreateEvent, Title = "Frida's birthday", Date = "2026-06-25", Kind = "birthday", AlertMinutes = 0 },
+        };
+
+        executor.Apply(actions, currentNoteId: null);
+
+        Assert.Contains(notes.GetAllActive(), n => n.Favorite && n.Title == "Pinned idea");
+        // The reminder lands on the reminder list AND a companion event on the calendar; the birthday
+        // event (with an alert) also creates a linked reminder → at least 2 reminders, ≥ 2 events.
+        Assert.True(reminders.GetAll().Count >= 2);
+        Assert.True(events.GetAll().Count >= 2);
+        Assert.Contains(events.GetAll(), e => e.Kind == "birthday" && e.Recurrence == "yearly");
+    }
+
+    [Fact]
     public async Task FakePlan_Apply_CreatesNoteTaskTag()
     {
         Environment.SetEnvironmentVariable("AI_PROVIDER", "fake");
@@ -45,20 +83,25 @@ public sealed class AiAssistTests : IDisposable
             var checklist = new ChecklistRepository(_factory);
             var tasks = new TaskService(new TaskRepository(_factory));
             var tags = new TagService(new TagRepository(_factory));
-            var executor = new AiActionExecutor(notes, checklist, tasks, tags);
+            var reminderRepo = new ReminderRepository(_factory);
+            var reminders = new ReminderService(reminderRepo);
+            var events = new EventService(new EventRepository(_factory), reminderRepo);
+            var executor = new AiActionExecutor(notes, checklist, tasks, tags, events, reminders);
 
             var cfg = new CloudConfig(_paths);
             Assert.Equal("fake", cfg.AiProvider);
             var svc = new AiAssistService(new GeminiClientFactory(cfg), executor);
 
-            var actions = await svc.PlanAsync("organize my launch");
-            Assert.NotEmpty(actions);
+            var plan = await svc.PlanAsync("organize my launch");
+            Assert.NotEmpty(plan.Actions);
 
-            svc.Apply(actions, currentNoteId: null);
+            svc.Apply(plan.Actions, currentNoteId: null);
 
             Assert.Contains(notes.GetAllActive(), n => n.Title.Contains("Plan", StringComparison.OrdinalIgnoreCase));
             Assert.NotEmpty(tasks.GetAll());
             Assert.Contains(tags.GetAll(), t => t.Name == "ai");
+            Assert.NotEmpty(reminders.GetAll());   // the fake plan now includes a reminder + event
+            Assert.NotEmpty(events.GetAll());
         }
         finally
         {

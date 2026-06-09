@@ -24,6 +24,13 @@ public sealed partial class TasksPage : Page
     private void UpdateEmpty()
         => EmptyHint.Visibility = Vm.Tasks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>Reload tasks (e.g. after the AI ball created some).</summary>
+    public void Reload()
+    {
+        Vm.Load();
+        UpdateEmpty();
+    }
+
     private void Add_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(TitleBox.Text))
