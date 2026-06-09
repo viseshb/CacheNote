@@ -655,6 +655,18 @@ public sealed partial class MainWindow : Window
         _reminderTimer?.Stop();
         _hotkey?.Dispose();
         TrayIcon.Dispose();
+
+        // Application.Exit() alone is unreliable in WinUI 3 when invoked from the tray menu
+        // while the window is hidden — the process stayed alive with a dead tray icon.
+        // Close the window for a clean teardown (OnClosing skips its cancel via _exiting),
+        // ask the app to exit, and back-stop with a hard process exit in case anything
+        // (stray foreground thread, framework quirk) still keeps the process around.
+        _ = System.Threading.Tasks.Task.Run(async () =>
+        {
+            await System.Threading.Tasks.Task.Delay(2000);
+            Environment.Exit(0);
+        });
+        try { Close(); } catch { /* proceed to Exit regardless */ }
         Application.Current.Exit();
     }
 
