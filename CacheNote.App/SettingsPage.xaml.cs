@@ -64,9 +64,7 @@ public sealed partial class SettingsPage : Page
         AssemblyKeyText.Text = CloudConfig.Mask(cfg.AssemblyAiKey);
         AiProviderText.Text = cfg.AiProvider;
         GeminiKeyText.Text = CloudConfig.Mask(string.IsNullOrEmpty(cfg.VertexKey) ? cfg.GeminiKey : cfg.VertexKey);
-        GoogleSyncStatus.Text = cfg.GoogleSyncConfigured
-            ? "OAuth client found in .env — sign-in flow ships next."
-            : "Not configured. Add GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET to .env.";
+        RefreshGoogleSyncUi();
 
         // Storage
         var paths = App.GetService<IAppPaths>();
@@ -163,20 +161,91 @@ public sealed partial class SettingsPage : Page
         }
     }
 
+    private void RefreshGoogleSyncUi()
+    {
+        var sync = App.GetService<GoogleCalendarSyncService>();
+        if (!sync.IsConfigured)
+        {
+            GoogleConnectLabel.Text = "Connect Google Calendar";
+            GoogleSyncNowBtn.Visibility = Visibility.Collapsed;
+            GoogleSyncStatus.Text = "Not configured. Add GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET to .env.";
+        }
+        else if (sync.IsConnected)
+        {
+            GoogleConnectLabel.Text = "Disconnect";
+            GoogleSyncNowBtn.Visibility = Visibility.Visible;
+            GoogleSyncStatus.Text = string.IsNullOrEmpty(sync.LastSyncStatus)
+                ? "Connected — events sync both ways automatically."
+                : sync.LastSyncStatus;
+        }
+        else
+        {
+            GoogleConnectLabel.Text = "Connect Google Calendar";
+            GoogleSyncNowBtn.Visibility = Visibility.Collapsed;
+            GoogleSyncStatus.Text = "OAuth client found in .env — click Connect to sign in.";
+        }
+    }
+
     private async void GoogleConnect_Click(object sender, RoutedEventArgs e)
     {
-        var cfg = App.GetService<CloudConfig>();
-        var msg = cfg.GoogleSyncConfigured
-            ? "A Google OAuth client was found in .env. The sign-in + two-way sync flow is scaffolded and ships in the next build."
-            : "To enable Google Calendar sync:\n\n1. In Google Cloud Console, enable the Calendar API and create an OAuth 2.0 \"Desktop app\" client.\n2. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the .env file in the app folder.\n3. Restart CacheNote and connect.";
-        var dlg = new ContentDialog
+        var sync = App.GetService<GoogleCalendarSyncService>();
+
+        if (!sync.IsConfigured)
         {
-            Title = "Google Calendar sync",
-            Content = msg,
-            CloseButtonText = "OK",
-            XamlRoot = XamlRoot,
-        };
-        await DialogHost.ShowAsync(dlg);
+            var dlg = new ContentDialog
+            {
+                Title = "Google Calendar sync",
+                Content = "To enable Google Calendar sync:\n\n1. In Google Cloud Console, enable the Calendar API and create an OAuth 2.0 \"Desktop app\" client.\n2. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the .env file in the app folder.\n3. Restart CacheNote and connect.",
+                CloseButtonText = "OK",
+                XamlRoot = XamlRoot,
+            };
+            await DialogHost.ShowAsync(dlg);
+            return;
+        }
+
+        if (sync.IsConnected)
+        {
+            sync.Disconnect();
+            RefreshGoogleSyncUi();
+            return;
+        }
+
+        GoogleConnectBtn.IsEnabled = false;
+        GoogleSyncStatus.Text = "Waiting for sign-in in your browser…";
+        try
+        {
+            var ok = await sync.SignInAsync();
+            GoogleSyncStatus.Text = ok ? sync.LastSyncStatus : sync.LastSyncStatus;
+        }
+        catch (Exception ex)
+        {
+            GoogleSyncStatus.Text = "Sign-in failed: " + ex.Message;
+        }
+        finally
+        {
+            GoogleConnectBtn.IsEnabled = true;
+            RefreshGoogleSyncUi();
+        }
+    }
+
+    private async void GoogleSyncNow_Click(object sender, RoutedEventArgs e)
+    {
+        var sync = App.GetService<GoogleCalendarSyncService>();
+        GoogleSyncNowBtn.IsEnabled = false;
+        GoogleSyncStatus.Text = "Syncing…";
+        try
+        {
+            await sync.SyncAsync();
+        }
+        catch (Exception ex)
+        {
+            GoogleSyncStatus.Text = "Sync failed: " + ex.Message;
+        }
+        finally
+        {
+            GoogleSyncNowBtn.IsEnabled = true;
+            GoogleSyncStatus.Text = sync.LastSyncStatus;
+        }
     }
 
     private void Back_Click(object sender, RoutedEventArgs e)

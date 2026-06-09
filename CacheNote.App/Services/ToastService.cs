@@ -25,6 +25,28 @@ public sealed class ToastService
     /// <summary>True once the notification COM activator registered successfully.</summary>
     public bool IsRegistered => _registered;
 
+    /// <summary>
+    /// True when a toast would actually be SEEN: registered AND Windows notifications are on
+    /// for this app. When false, callers must fall back to in-app notification UI — otherwise
+    /// reminders fire silently into nothing.
+    /// </summary>
+    public bool CanShow
+    {
+        get
+        {
+            if (!_registered)
+                return false;
+            try
+            {
+                return AppNotificationManager.Default.Setting == AppNotificationSetting.Enabled;
+            }
+            catch
+            {
+                return true;   // can't query the setting → assume toasts work
+            }
+        }
+    }
+
     /// <summary>Register the COM activator + invocation handler. Must run at startup,
     /// with the handler attached BEFORE Register(). Non-fatal: an unpackaged app may not
     /// yet have an identity (Start Menu shortcut + AUMID, added by the installer in M7),

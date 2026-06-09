@@ -12,6 +12,13 @@ public interface IEventRepository
     void Update(CalendarEvent e);
     void Delete(long id);
     void SetReminderId(long eventId, long? reminderId);
+
+    // ----- Google sync -----
+    CalendarEvent? GetByGoogleId(string googleId);
+    void LinkGoogle(long eventId, string googleId, DateTime googleUpdatedUtc);
+    void AddPendingGoogleDelete(string googleId);
+    IReadOnlyList<string> GetPendingGoogleDeletes();
+    void ClearPendingGoogleDelete(string googleId);
 }
 
 public sealed class EventRepository : IEventRepository
@@ -39,9 +46,11 @@ public sealed class EventRepository : IEventRepository
         return conn.ExecuteScalar<long>(
             """
             INSERT INTO events(title, location, notes, start_utc, end_utc, all_day, kind, color_hex,
-                               recurrence, meeting_url, alert_minutes, reminder_id, created_utc, updated_utc)
+                               recurrence, meeting_url, alert_minutes, reminder_id, created_utc, updated_utc,
+                               google_id, google_updated_utc)
             VALUES (@Title, @Location, @Notes, @Start, @End, @AllDay, @Kind, @ColorHex,
-                    @Recurrence, @MeetingUrl, @AlertMinutes, @ReminderId, @Created, @Updated);
+                    @Recurrence, @MeetingUrl, @AlertMinutes, @ReminderId, @Created, @Updated,
+                    @GoogleId, @GoogleUpdated);
             SELECT last_insert_rowid();
             """,
             new
@@ -60,6 +69,8 @@ public sealed class EventRepository : IEventRepository
                 e.ReminderId,
                 Created = Iso(e.CreatedUtc == default ? now : e.CreatedUtc),
                 Updated = Iso(e.UpdatedUtc == default ? now : e.UpdatedUtc),
+                e.GoogleId,
+                GoogleUpdated = e.GoogleUpdatedUtc.HasValue ? Iso(e.GoogleUpdatedUtc.Value) : null,
             });
     }
 
@@ -72,7 +83,7 @@ public sealed class EventRepository : IEventRepository
             SET title = @Title, location = @Location, notes = @Notes, start_utc = @Start, end_utc = @End,
                 all_day = @AllDay, kind = @Kind, color_hex = @ColorHex, recurrence = @Recurrence,
                 meeting_url = @MeetingUrl, alert_minutes = @AlertMinutes, reminder_id = @ReminderId,
-                updated_utc = @Updated
+                updated_utc = @Updated, google_id = @GoogleId, google_updated_utc = @GoogleUpdated
             WHERE id = @Id;
             """,
             new
@@ -91,6 +102,8 @@ public sealed class EventRepository : IEventRepository
                 e.AlertMinutes,
                 e.ReminderId,
                 Updated = Iso(DateTime.UtcNow),
+                e.GoogleId,
+                GoogleUpdated = e.GoogleUpdatedUtc.HasValue ? Iso(e.GoogleUpdatedUtc.Value) : null,
             });
     }
 
@@ -104,6 +117,39 @@ public sealed class EventRepository : IEventRepository
     {
         using var conn = _factory.Create();
         conn.Execute("UPDATE events SET reminder_id = @reminderId WHERE id = @eventId;", new { eventId, reminderId });
+    }
+
+    public CalendarEvent? GetByGoogleId(string googleId)
+    {
+        using var conn = _factory.Create();
+        return conn.QuerySingleOrDefault<CalendarEvent>(
+            "SELECT * FROM events WHERE google_id = @googleId;", new { googleId });
+    }
+
+    public void LinkGoogle(long eventId, string googleId, DateTime googleUpdatedUtc)
+    {
+        using var conn = _factory.Create();
+        conn.Execute(
+            "UPDATE events SET google_id = @googleId, google_updated_utc = @updated WHERE id = @eventId;",
+            new { eventId, googleId, updated = Iso(googleUpdatedUtc) });
+    }
+
+    public void AddPendingGoogleDelete(string googleId)
+    {
+        using var conn = _factory.Create();
+        conn.Execute("INSERT OR IGNORE INTO google_deletes(google_id) VALUES (@googleId);", new { googleId });
+    }
+
+    public IReadOnlyList<string> GetPendingGoogleDeletes()
+    {
+        using var conn = _factory.Create();
+        return conn.Query<string>("SELECT google_id FROM google_deletes;").AsList();
+    }
+
+    public void ClearPendingGoogleDelete(string googleId)
+    {
+        using var conn = _factory.Create();
+        conn.Execute("DELETE FROM google_deletes WHERE google_id = @googleId;", new { googleId });
     }
 
     private static string Iso(DateTime dt) => dt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);

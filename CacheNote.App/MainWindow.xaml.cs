@@ -13,6 +13,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using CacheNote.Core.Ai;
+using CacheNote.Core.Cloud;
 using CacheNote.Core.Services;
 using CacheNote.Core.Speech;
 using CacheNote_App.Services;
@@ -122,10 +123,31 @@ public sealed partial class MainWindow : Window
         _hotkey = new GlobalHotkey(hwnd, 0x4E /* VK_N */, () => DispatcherQueue.TryEnqueue(NewNote));
 
         StartReminderEngine();
+        StartGoogleSync();
+    }
+
+    // ----- Google Calendar sync: at startup, after local edits (debounced in the service),
+    //       and every 5 minutes so remote changes flow in without user action -----
+    private void StartGoogleSync()
+    {
+        var sync = App.GetService<GoogleCalendarSyncService>();
+        if (!sync.IsConnected)
+            return;
+
+        sync.SyncCompleted += () => DispatcherQueue.TryEnqueue(RefreshCalendarIfOpen);
+        sync.RequestSync();   // catch up on remote changes made while the app was closed
+    }
+
+    /// <summary>Reload the Calendar if that page is currently shown (after a sync pull).</summary>
+    public void RefreshCalendarIfOpen()
+    {
+        if (RootFrame.Content is CalendarPage page)
+            page.Vm.Reload();
     }
 
     // ----- reminder engine (runs on the UI dispatcher; keeps ticking while in the tray) -----
     private DispatcherQueueTimer? _reminderTimer;
+    private int _syncTick;
 
     private void StartReminderEngine()
     {
@@ -144,6 +166,14 @@ public sealed partial class MainWindow : Window
         // one transient SQLite error must not crash a tray app the user believes is running.
         try
         {
+            // Piggyback the periodic Google sync on this 20s tick (15 ticks = 5 min).
+            // Runs even when notifications are paused — pause is about toasts, not sync.
+            if (++_syncTick >= 15)
+            {
+                _syncTick = 0;
+                App.GetService<GoogleCalendarSyncService>().RequestSync();
+            }
+
             // Paused → don't fire (and don't advance, so they fire once unpaused).
             if (App.GetService<ISettingsService>().GetBool("pause_notifications"))
                 return;
@@ -158,8 +188,19 @@ public sealed partial class MainWindow : Window
                 return;
 
             var toast = App.GetService<ToastService>();
-            foreach (var r in due)
-                toast.ShowReminder(r.Id, r.Message);
+            if (toast.CanShow)
+            {
+                foreach (var r in due)
+                    toast.ShowReminder(r.Id, r.Message);
+            }
+            else
+            {
+                // Windows notifications are off for this app (or registration failed) —
+                // surface the reminder in-app instead of dropping it silently.
+                foreach (var r in due)
+                    ShowInAppReminder(r.Id, r.Message);
+                ShowAndActivate();
+            }
 
             RefreshRemindersIfOpen();
         }
@@ -167,6 +208,39 @@ public sealed partial class MainWindow : Window
         {
             // Transient DB/toast failure — try again on the next tick.
         }
+    }
+
+    /// <summary>In-app reminder banner with the same actions as the toast (Complete / Snooze).</summary>
+    private void ShowInAppReminder(long id, string? message)
+    {
+        var bar = new InfoBar
+        {
+            Title = "Reminder",
+            Message = string.IsNullOrWhiteSpace(message) ? "You have a reminder." : message,
+            Severity = InfoBarSeverity.Informational,
+            IsOpen = true,
+        };
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 12) };
+        actions.Children.Add(MakeReminderAction("Complete", () => App.GetService<IReminderService>().Complete(id), bar));
+        actions.Children.Add(MakeReminderAction("Snooze 5m", () => App.GetService<IReminderService>().Snooze(id, 5, DateTime.UtcNow), bar));
+        actions.Children.Add(MakeReminderAction("Snooze 15m", () => App.GetService<IReminderService>().Snooze(id, 15, DateTime.UtcNow), bar));
+        bar.Content = actions;
+
+        bar.Closed += (s, _) => InAppNotifyHost.Children.Remove(s);
+        InAppNotifyHost.Children.Add(bar);
+    }
+
+    private Button MakeReminderAction(string label, Action act, InfoBar bar)
+    {
+        var b = new Button { Content = label, FontSize = 12 };
+        b.Click += (_, _) =>
+        {
+            try { act(); } catch { /* DB hiccup — banner still closes; next poll re-fires if needed */ }
+            bar.IsOpen = false;
+            RefreshRemindersIfOpen();
+        };
+        return b;
     }
 
     /// <summary>Reload the Reminders list if that page is currently shown.</summary>

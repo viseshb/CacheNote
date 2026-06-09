@@ -1,3 +1,4 @@
+using CacheNote.Core.Cloud;
 using CacheNote.Core.Data;
 using CacheNote.Core.Models;
 
@@ -12,11 +13,14 @@ public sealed class EventService
 {
     private readonly IEventRepository _events;
     private readonly IReminderRepository _reminders;
+    private readonly GoogleCalendarSyncService? _google;
 
-    public EventService(IEventRepository events, IReminderRepository reminders)
+    // google is optional so unit tests can construct the service without the whole cloud stack.
+    public EventService(IEventRepository events, IReminderRepository reminders, GoogleCalendarSyncService? google = null)
     {
         _events = events;
         _reminders = reminders;
+        _google = google;
     }
 
     public IReadOnlyList<CalendarEvent> GetAll() => _events.GetAll();
@@ -37,6 +41,7 @@ public sealed class EventService
             _events.Update(e);
         }
         SyncAlert(e);
+        _google?.RequestSync();   // auto-push local changes to Google (debounced; no-op when not connected)
         return e.Id;
     }
 
@@ -45,7 +50,11 @@ public sealed class EventService
         var e = _events.GetById(id);
         if (e?.ReminderId is long rid)
             _reminders.Delete(rid);
+        // Tombstone linked events so the next sync deletes the Google copy too.
+        if (e?.GoogleId is string gid)
+            _events.AddPendingGoogleDelete(gid);
         _events.Delete(id);
+        _google?.RequestSync();
     }
 
     /// <summary>

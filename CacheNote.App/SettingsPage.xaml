@@ -301,15 +301,28 @@
                                 Foreground="{ThemeResource AppTextSecondaryBrush}"
                                 Text="Sync events with Google Calendar. Add a Google Cloud OAuth 2.0 Desktop client (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) to .env, then connect."
                                 TextWrapping="Wrap" />
-                            <Button
-                                x:Name="GoogleConnectBtn"
-                                AutomationProperties.AutomationId="GoogleConnectButton"
-                                Click="GoogleConnect_Click">
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <FontIcon FontSize="14" Glyph="&#xE787;" />
-                                    <TextBlock Text="Connect Google Calendar" />
-                                </StackPanel>
-                            </Button>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button
+                                    x:Name="GoogleConnectBtn"
+                                    AutomationProperties.AutomationId="GoogleConnectButton"
+                                    Click="GoogleConnect_Click">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon FontSize="14" Glyph="&#xE787;" />
+                                        <TextBlock x:Name="GoogleConnectLabel" Text="Connect Google Calendar" />
+                                    </StackPanel>
+                                </Button>
+                                <Button
+                                    x:Name="GoogleSyncNowBtn"
+                                    AutomationProperties.AutomationId="GoogleSyncNowButton"
+                                    AutomationProperties.Name="Sync Google Calendar now"
+                                    Click="GoogleSyncNow_Click"
+                                    Visibility="Collapsed">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon FontSize="14" Glyph="&#xE895;" />
+                                        <TextBlock Text="Sync now" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
                             <TextBlock
                                 x:Name="GoogleSyncStatus"
                                 FontSize="12"

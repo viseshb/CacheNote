@@ -50,12 +50,19 @@ public sealed class ReminderServiceTests : IDisposable
     }
 
     [Fact]
-    public void AdvancePastNow_Monthly_AdvancesAtLeastOneMonth()
+    public void AdvancePastNow_Monthly_AdvancesAtLeastOneMonth_KeepingLocalWallClock()
     {
         var fire = new DateTime(2026, 1, 15, 8, 0, 0, DateTimeKind.Utc);
         var now = new DateTime(2026, 3, 20, 8, 0, 0, DateTimeKind.Utc);
         var next = ReminderMath.AdvancePastNow(fire, RepeatKinds.Monthly, now);
-        Assert.Equal(new DateTime(2026, 4, 15, 8, 0, 0, DateTimeKind.Utc), next);
+
+        // Occurrences keep the LOCAL wall-clock time across DST, so compare in local time
+        // (the UTC instant legitimately shifts by the DST offset when a boundary is crossed).
+        var fireLocal = fire.ToLocalTime();
+        var nextLocal = next.ToLocalTime();
+        Assert.Equal(fireLocal.Date.AddMonths(3), nextLocal.Date);
+        Assert.Equal(fireLocal.TimeOfDay, nextLocal.TimeOfDay);
+        Assert.True(next > now);
     }
 
     // ---- service round-trips through SQLite ----

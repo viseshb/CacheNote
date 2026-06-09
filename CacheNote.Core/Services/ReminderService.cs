@@ -32,8 +32,14 @@ public static class ReminderMath
         if (repeat == RepeatKinds.Once || fire > now)
             return fire;
 
+        // Step in LOCAL wall-clock time, then convert back to UTC: a daily 9:00 AM reminder
+        // must stay 9:00 AM local across a DST change — stepping the stored UTC instant
+        // shifted every repeating reminder by an hour twice a year.
+        var anchorLocal = DateTime.SpecifyKind(anchor, DateTimeKind.Utc).ToLocalTime();
+        var nowLocal = DateTime.SpecifyKind(now, DateTimeKind.Utc).ToLocalTime();
+
         // Cheap lower-bound start index (may undershoot, never overshoots).
-        var days = (now - anchor).TotalDays;
+        var days = (nowLocal - anchorLocal).TotalDays;
         var n = (int)Math.Max(1, repeat switch
         {
             RepeatKinds.Daily => (long)days - 1,
@@ -45,13 +51,13 @@ public static class ReminderMath
         {
             var occ = repeat switch
             {
-                RepeatKinds.Daily => anchor.AddDays(n),
-                RepeatKinds.Weekly => anchor.AddDays(7L * n),
-                RepeatKinds.Monthly => anchor.AddMonths(n),
-                _ => anchor,
+                RepeatKinds.Daily => anchorLocal.AddDays(n),
+                RepeatKinds.Weekly => anchorLocal.AddDays(7L * n),
+                RepeatKinds.Monthly => anchorLocal.AddMonths(n),
+                _ => anchorLocal,
             };
-            if (occ > now)
-                return occ;
+            if (occ > nowLocal)
+                return occ.ToUniversalTime();
         }
         return fire;
     }

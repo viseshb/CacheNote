@@ -381,6 +381,18 @@
             </Border>
         </Grid>
 
+        <!-- In-app reminder fallback: used when Windows toasts can't show (notifications turned
+             off for the app / Focus Assist) — reminders must never fire silently into nothing. -->
+        <StackPanel
+            x:Name="InAppNotifyHost"
+            Grid.Row="1"
+            MaxWidth="560"
+            Margin="16,8"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Top"
+            AutomationProperties.AutomationId="InAppNotifyHost"
+            Spacing="8" />
+
         <!-- System tray icon (renders nothing in-window). Left-click opens; right-click = menu. -->
         <tb:TaskbarIcon
             x:Name="TrayIcon"

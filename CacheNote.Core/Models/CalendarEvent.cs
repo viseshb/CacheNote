@@ -45,6 +45,12 @@ public sealed class CalendarEvent
     /// <summary>The reminder row backing this event's alert (so it can be updated/deleted).</summary>
     public long? ReminderId { get; set; }
 
+    /// <summary>Google Calendar event id when this event is linked (two-way sync); null = local-only.</summary>
+    public string? GoogleId { get; set; }
+
+    /// <summary>Google's "updated" stamp recorded at last sync — the conflict baseline.</summary>
+    public DateTime? GoogleUpdatedUtc { get; set; }
+
     public DateTime CreatedUtc { get; set; }
     public DateTime UpdatedUtc { get; set; }
 }

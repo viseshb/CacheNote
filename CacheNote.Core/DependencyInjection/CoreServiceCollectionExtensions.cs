@@ -41,6 +41,7 @@ public static class CoreServiceCollectionExtensions
         // so nothing network/audio/native is constructed at startup.
         services.AddSingleton<Cloud.CloudConfig>();
         services.AddSingleton<Cloud.CloudConnectivity>();
+        services.AddSingleton<Cloud.GoogleCalendarSyncService>();
         services.AddSingleton<Speech.ISpeechToTextFactory, Speech.SpeechToTextFactory>();
         services.AddSingleton<Ai.IGeminiClientFactory, Ai.GeminiClientFactory>();
         services.AddSingleton<Ai.AiActionExecutor>();

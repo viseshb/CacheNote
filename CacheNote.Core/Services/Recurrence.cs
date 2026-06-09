@@ -32,16 +32,23 @@ public static class Recurrence
         }
     }
 
-    /// <summary>The first occurrence at or after <paramref name="after"/> (UTC in, UTC out).</summary>
+    /// <summary>
+    /// The first occurrence at or after <paramref name="after"/> (UTC in, UTC out).
+    /// Occurrences are stepped in LOCAL wall-clock time, then converted back: a daily 9:00 AM
+    /// event must stay 9:00 AM local across a DST change — stepping the stored UTC instant
+    /// shifted every recurring event by an hour twice a year.
+    /// </summary>
     public static DateTime NextStartUtc(DateTime startUtc, string recurrence, DateTime after)
     {
         if (recurrence == EventRecurrence.None)
             return startUtc;
-        var n = FirstIndexOnOrAfter(startUtc, recurrence, after);
+        var startLocal = DateTime.SpecifyKind(startUtc, DateTimeKind.Utc).ToLocalTime();
+        var afterLocal = DateTime.SpecifyKind(after, DateTimeKind.Utc).ToLocalTime();
+        var n = FirstIndexOnOrAfter(startLocal, recurrence, afterLocal);
         var guard = 0;
-        while (Nth(startUtc, recurrence, n) < after && guard++ < 1000)
+        while (Nth(startLocal, recurrence, n) < afterLocal && guard++ < 1000)
             n++;
-        return Nth(startUtc, recurrence, n);
+        return Nth(startLocal, recurrence, n).ToUniversalTime();
     }
 
     /// <summary>The n-th occurrence, anchored to the original start.</summary>

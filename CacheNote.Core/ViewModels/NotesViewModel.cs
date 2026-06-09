@@ -21,6 +21,7 @@ public sealed partial class NotesViewModel : ObservableObject
     private readonly ITagService _tags;
     private readonly ISearchService _search;
     private readonly IMdBlockRepository _md;
+    private readonly IAttachmentService _attachments;
 
     public ObservableCollection<NoteListItemViewModel> Notes { get; } = new();
     public ObservableCollection<ChecklistItemViewModel> Items { get; } = new();
@@ -48,13 +49,14 @@ public sealed partial class NotesViewModel : ObservableObject
     /// <summary>Raised when the view should load a note's RTF into the editor.</summary>
     public event Action<long>? ContentRequested;
 
-    public NotesViewModel(INoteRepository notes, IChecklistRepository checklist, ITagService tags, ISearchService search, IMdBlockRepository md)
+    public NotesViewModel(INoteRepository notes, IChecklistRepository checklist, ITagService tags, ISearchService search, IMdBlockRepository md, IAttachmentService attachments)
     {
         _notes = notes;
         _checklist = checklist;
         _tags = tags;
         _search = search;
         _md = md;
+        _attachments = attachments;
     }
 
     public void LoadList()
@@ -202,6 +204,26 @@ public sealed partial class NotesViewModel : ObservableObject
             var newId = _checklist.Add(id, ci.Text, order++);
             if (ci.IsDone)
                 _checklist.SetDone(newId, true);
+        }
+
+        // A duplicate is the WHOLE note: tags, markdown blocks, and attachments too —
+        // it used to copy only title/body/checklist and silently drop the rest.
+        foreach (var tag in _tags.GetForNote(CurrentNoteId))
+            _tags.AddToNote(id, tag.Id);
+
+        var mdOrder = 0;
+        foreach (var mb in _md.GetByNote(CurrentNoteId))
+            _md.Add(id, mb.Content, mdOrder++);
+
+        foreach (var a in _attachments.GetForNote(CurrentNoteId))
+        {
+            try
+            {
+                var bytes = System.IO.File.ReadAllBytes(_attachments.AbsolutePath(a));
+                var ext = System.IO.Path.GetExtension(a.Filename);
+                _attachments.SaveImage(id, bytes, string.IsNullOrEmpty(ext) ? ".png" : ext, a.Mime);
+            }
+            catch { /* source file missing/locked — copy the rest of the note anyway */ }
         }
 
         Notes.Insert(0, ToItem(_notes.GetById(id)!));

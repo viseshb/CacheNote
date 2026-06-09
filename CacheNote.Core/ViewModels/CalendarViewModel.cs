@@ -303,7 +303,17 @@ public sealed partial class CalendarViewModel : ObservableObject
         foreach (var ev in _events.GetAll())
         {
             var localStart = DateTime.SpecifyKind(ev.StartUtc, DateTimeKind.Utc).ToLocalTime();
-            foreach (var occ in Recurrence.Occurrences(localStart, ev.Recurrence, windowStart, windowEnd))
+
+            // A multi-day event spans every day from start..end, not just its start day —
+            // a 3-day conference used to be invisible on days 2 and 3.
+            var spanDays = 0;
+            if (ev.EndUtc is DateTime endUtc)
+            {
+                var localEnd = DateTime.SpecifyKind(endUtc, DateTimeKind.Utc).ToLocalTime();
+                spanDays = Math.Clamp((int)(localEnd.Date - localStart.Date).TotalDays, 0, 366);
+            }
+
+            foreach (var occ in Recurrence.Occurrences(localStart, ev.Recurrence, windowStart.AddDays(-spanDays), windowEnd))
             {
                 var kindLabel = ev.Kind switch
                 {
@@ -312,9 +322,16 @@ public sealed partial class CalendarViewModel : ObservableObject
                     EventKinds.Birthday => "Birthday",
                     _ => "Event",
                 };
-                Add(occ, new CalendarEntryViewModel(
-                    string.IsNullOrWhiteSpace(ev.Title) ? "Event" : ev.Title, occ, kindLabel,
-                    ev.ColorHex, dimmed: false, eventId: ev.Id, meetingUrl: ev.MeetingUrl, allDay: ev.AllDay));
+                for (var d = 0; d <= spanDays; d++)
+                {
+                    var day = occ.AddDays(d);
+                    if (day.Date < windowStart.Date || day.Date > windowEnd.Date)
+                        continue;
+                    Add(day, new CalendarEntryViewModel(
+                        string.IsNullOrWhiteSpace(ev.Title) ? "Event" : ev.Title, occ, kindLabel,
+                        ev.ColorHex, dimmed: false, eventId: ev.Id, meetingUrl: ev.MeetingUrl,
+                        allDay: ev.AllDay, continuation: d > 0));
+                }
             }
         }
     }
@@ -365,7 +382,7 @@ public sealed class CalendarMonthViewModel
 public sealed class CalendarEntryViewModel
 {
     public CalendarEntryViewModel(string title, DateTime localTime, string kind, string colorHex, bool dimmed,
-        long eventId = 0, string? meetingUrl = null, bool allDay = false)
+        long eventId = 0, string? meetingUrl = null, bool allDay = false, bool continuation = false)
     {
         Title = title;
         Kind = kind;
@@ -373,9 +390,11 @@ public sealed class CalendarEntryViewModel
         EventId = eventId;
         MeetingUrl = meetingUrl;
         AllDay = allDay;
-        TimeText = allDay ? "All day" : localTime.ToString("h:mm tt", CultureInfo.CurrentCulture);
+        // Continuation days of a multi-day event sort first (like all-day) and show "Cont'd"
+        // instead of repeating the start time on a day it doesn't apply to.
+        TimeText = continuation ? "Cont'd" : allDay ? "All day" : localTime.ToString("h:mm tt", CultureInfo.CurrentCulture);
         DateText = localTime.ToString("ddd, MMM d", CultureInfo.CurrentCulture);
-        SortKey = allDay ? TimeSpan.Zero : localTime.TimeOfDay;
+        SortKey = allDay || continuation ? TimeSpan.Zero : localTime.TimeOfDay;
         Opacity = dimmed ? 0.5 : 1.0;
     }
 

@@ -27,7 +27,7 @@ public sealed class MigrationsTests : IDisposable
     {
         _runner.Run();
 
-        Assert.Equal(3, _runner.CurrentVersion());
+        Assert.Equal(4, _runner.CurrentVersion());
         Assert.True(File.Exists(_paths.DatabaseFile));
 
         using var conn = _factory.Create();
@@ -39,7 +39,7 @@ public sealed class MigrationsTests : IDisposable
                  {
                      "notes", "checklist_items", "tasks", "reminders",
                      "tags", "note_tags", "attachments", "settings", "notes_fts",
-                     "events",
+                     "events", "google_deletes",
                  })
         {
             Assert.Contains(expected, tables);
@@ -51,7 +51,7 @@ public sealed class MigrationsTests : IDisposable
     {
         _runner.Run();
         _runner.Run(); // must not throw or duplicate
-        Assert.Equal(3, _runner.CurrentVersion());
+        Assert.Equal(4, _runner.CurrentVersion());
     }
 
     [Fact]
