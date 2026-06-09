@@ -21,6 +21,7 @@ public static class CoreServiceCollectionExtensions
         services.AddSingleton<IAppPaths>(_ => new AppPaths());
         services.AddSingleton<IDbConnectionFactory, SqliteConnectionFactory>();
         services.AddSingleton<MigrationRunner>();
+        services.AddSingleton<DatabaseBackupService>();
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<INoteRepository, NoteRepository>();
         services.AddSingleton<IChecklistRepository, ChecklistRepository>();

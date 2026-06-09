@@ -65,6 +65,11 @@ public partial class App : Application
             GetService<IAppPaths>().EnsureCreated();
             GetService<MigrationRunner>().Run();
 
+            // Daily safety snapshot AFTER migrations (so the backup has the upgraded schema).
+            // Off the UI thread — a multi-MB VACUUM INTO must not delay first paint.
+            var backup = GetService<CacheNote.Core.Data.DatabaseBackupService>();
+            _ = System.Threading.Tasks.Task.Run(backup.RunDailyBackup);
+
             // Subscribe BEFORE Register so the invocation handler is wired when toasts fire.
             var toast = GetService<ToastService>();
             toast.Activated += arg => HandleToastAction(arg, "NotificationInvoked");
