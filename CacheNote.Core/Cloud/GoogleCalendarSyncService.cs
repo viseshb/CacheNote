@@ -302,6 +302,14 @@ public sealed class GoogleCalendarSyncService
                 {
                     // Deleted on Google; the pull pass (cancelled item) will remove it locally.
                 }
+                else if (res.StatusCode == HttpStatusCode.BadRequest)
+                {
+                    // Google rejects this patch permanently (read-only event, contact birthday,
+                    // unsupported recurrence shape). Re-baseline so we don't retry it every
+                    // 5 minutes forever; the next REAL local edit will try again once.
+                    _log.LogWarning("Google rejected update for event {Id} (400) — keeping remote version.", e.Id);
+                    _events.LinkGoogle(e.Id, e.GoogleId, e.UpdatedUtc == default ? DateTime.UtcNow : e.UpdatedUtc);
+                }
                 else
                 {
                     _log.LogWarning("Google update failed for event {Id}: {Status}", e.Id, res.StatusCode);
@@ -412,7 +420,10 @@ public sealed class GoogleCalendarSyncService
 
             MapGoogleInto(item, local);
             local.GoogleUpdatedUtc = updated;
-            local.UpdatedUtc = DateTime.UtcNow;
+            // Stamp UpdatedUtc with GOOGLE's stamp, not UtcNow: a now-stamp moves the local
+            // side past the baseline, so the next push pass PATCHed every pulled event right
+            // back at Google — an endless update loop (and 400s on read-only/birthday events).
+            local.UpdatedUtc = updated;
             _events.Update(local);
             return true;
         }
@@ -420,7 +431,7 @@ public sealed class GoogleCalendarSyncService
         var e = new CalendarEvent { GoogleId = gid, GoogleUpdatedUtc = updated };
         MapGoogleInto(item, e);
         e.CreatedUtc = DateTime.UtcNow;
-        e.UpdatedUtc = DateTime.UtcNow;
+        e.UpdatedUtc = updated;
         _events.Insert(e);
         return true;
     }

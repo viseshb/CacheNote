@@ -401,33 +401,36 @@
             x:Name="TrayIcon"
             IconSource="/Assets/AppIcon.ico"
             ToolTipText="CacheNote — click to open">
+            <!-- H.NotifyIcon shows this as a NATIVE Win32 popup menu, which never raises the
+                 XAML Click event — every item must use Command (assigned in code-behind),
+                 exactly like LeftClickCommand. Click= here silently does nothing. -->
             <tb:TaskbarIcon.ContextFlyout>
                 <MenuFlyout>
-                    <MenuFlyoutItem Click="Tray_Open" Text="Open CacheNote">
+                    <MenuFlyoutItem x:Name="TrayOpenItem" Text="Open CacheNote">
                         <MenuFlyoutItem.Icon>
                             <FontIcon Glyph="&#xE8A7;" />
                         </MenuFlyoutItem.Icon>
                     </MenuFlyoutItem>
-                    <MenuFlyoutItem Click="Tray_NewNote" Text="New note">
+                    <MenuFlyoutItem x:Name="TrayNewNoteItem" Text="New note">
                         <MenuFlyoutItem.Icon>
                             <FontIcon Glyph="&#xE70F;" />
                         </MenuFlyoutItem.Icon>
                     </MenuFlyoutItem>
-                    <MenuFlyoutItem Click="Tray_NewTask" Text="New task">
+                    <MenuFlyoutItem x:Name="TrayNewTaskItem" Text="New task">
                         <MenuFlyoutItem.Icon>
                             <FontIcon Glyph="&#xE8FD;" />
                         </MenuFlyoutItem.Icon>
                     </MenuFlyoutItem>
                     <MenuFlyoutSeparator />
-                    <ToggleMenuFlyoutItem x:Name="AlwaysOnTopItem" Click="Tray_ToggleAlwaysOnTop" Text="Always on top" />
-                    <ToggleMenuFlyoutItem x:Name="PauseNotifyItem" Click="Tray_TogglePause" Text="Pause notifications" />
+                    <ToggleMenuFlyoutItem x:Name="AlwaysOnTopItem" Text="Always on top" />
+                    <ToggleMenuFlyoutItem x:Name="PauseNotifyItem" Text="Pause notifications" />
                     <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Click="Tray_Settings" Text="Settings">
+                    <MenuFlyoutItem x:Name="TraySettingsItem" Text="Settings">
                         <MenuFlyoutItem.Icon>
                             <FontIcon Glyph="&#xE713;" />
                         </MenuFlyoutItem.Icon>
                     </MenuFlyoutItem>
-                    <MenuFlyoutItem Click="Tray_Exit" Text="Exit">
+                    <MenuFlyoutItem x:Name="TrayExitItem" Text="Exit">
                         <MenuFlyoutItem.Icon>
                             <FontIcon Glyph="&#xE7E8;" />
                         </MenuFlyoutItem.Icon>

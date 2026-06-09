@@ -101,7 +101,9 @@ public sealed class EventRepository : IEventRepository
                 e.MeetingUrl,
                 e.AlertMinutes,
                 e.ReminderId,
-                Updated = Iso(DateTime.UtcNow),
+                // Honor a caller-set stamp: Google-pull updates must store GOOGLE's updated
+                // time (the sync baseline), not "now" — see GoogleCalendarSyncService.
+                Updated = Iso(e.UpdatedUtc == default ? DateTime.UtcNow : e.UpdatedUtc),
                 e.GoogleId,
                 GoogleUpdated = e.GoogleUpdatedUtc.HasValue ? Iso(e.GoogleUpdatedUtc.Value) : null,
             });

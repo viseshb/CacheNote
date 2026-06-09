@@ -107,9 +107,21 @@ public sealed partial class MainWindow : Window
         // Hide-to-tray: intercept close and hide instead, unless we're really exiting.
         AppWindow.Closing += OnClosing;
 
-        // Tray icon: left-click opens; the context menu has the rest.
+        // Tray icon: left-click opens; the context menu has the rest. The menu is a NATIVE
+        // Win32 popup (H.NotifyIcon), which never raises XAML Click — Commands only.
         TrayIcon.ForceCreate();
         TrayIcon.LeftClickCommand = new RelayCommand(ShowAndActivate);
+        TrayOpenItem.Command = new RelayCommand(ShowAndActivate);
+        TrayNewNoteItem.Command = new RelayCommand(NewNote);
+        TrayNewTaskItem.Command = new RelayCommand(() => { ShowAndActivate(); RootFrame.Navigate(typeof(TasksPage)); });
+        // Toggles flip from the persisted source of truth — the native menu's IsChecked
+        // handling is not part of the XAML invoke pipeline, so it can't be trusted here.
+        AlwaysOnTopItem.Command = new RelayCommand(
+            () => SetAlwaysOnTop(!App.GetService<ISettingsService>().GetBool("always_on_top")));
+        PauseNotifyItem.Command = new RelayCommand(
+            () => SetPauseNotifications(!App.GetService<ISettingsService>().GetBool("pause_notifications")));
+        TraySettingsItem.Command = new RelayCommand(() => { ShowAndActivate(); RootFrame.Navigate(typeof(SettingsPage)); });
+        TrayExitItem.Command = new RelayCommand(ExitApp);
 
         // Always-on-top (persisted) + reflect both toggle states in the menu.
         var alwaysOnTop = settings.GetBool("always_on_top");
@@ -315,28 +327,6 @@ public sealed partial class MainWindow : Window
     }
 
     // ----- tray menu handlers -----
-    private void Tray_Open(object sender, RoutedEventArgs e) => ShowAndActivate();
-
-    private void Tray_NewNote(object sender, RoutedEventArgs e) => NewNote();
-
-    private void Tray_NewTask(object sender, RoutedEventArgs e)
-    {
-        ShowAndActivate();
-        RootFrame.Navigate(typeof(TasksPage));
-    }
-
-    private void Tray_ToggleAlwaysOnTop(object sender, RoutedEventArgs e)
-        => ApplyAlwaysOnTop(AlwaysOnTopItem.IsChecked, persist: true);
-
-    private void Tray_TogglePause(object sender, RoutedEventArgs e)
-        => App.GetService<ISettingsService>().SetBool("pause_notifications", PauseNotifyItem.IsChecked);
-
-    private void Tray_Settings(object sender, RoutedEventArgs e)
-    {
-        ShowAndActivate();
-        RootFrame.Navigate(typeof(SettingsPage));
-    }
-
     // ----- title-bar quick actions -----
     private void Gear_Click(object sender, RoutedEventArgs e)
     {
@@ -640,8 +630,6 @@ public sealed partial class MainWindow : Window
         if (AiStatus.Text == "Listening…" || AiStatus.Text.StartsWith("… "))
             AiStatus.Text = "";   // clear the listening indicator so it doesn't stick
     }
-
-    private void Tray_Exit(object sender, RoutedEventArgs e) => ExitApp();
 
     /// <summary>Real exit (tray Exit / update install): flush pending edits, then tear down.</summary>
     private void ExitApp()
