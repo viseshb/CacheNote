@@ -1,0 +1,40 @@
+<Project>
+  <!--
+    Single source of truth for the app version — NOTHING is hardcoded.
+    Mirrors InterviewMate's resolve-version.mjs: the latest git tag `v*` is the
+    source of truth, resolved at build time.
+
+      1. CI / semantic-release passes  -p:Version=<computed>  on the command line.
+         That is an MSBuild *global* property, so it wins and the target below is
+         skipped (condition no longer matches 0.0.0).
+      2. Local / dev build with git available -> derive from `git describe`.
+      3. No git, no tags, shallow clone -> stays 0.0.0 so a dev build never claims
+         to be newer than a real release (the updater also self-suppresses on dev).
+
+    The git tag is the ONLY place the number lives; bump = cut a new tag (which
+    semantic-release does from conventional-commit messages on push to master).
+  -->
+  <PropertyGroup>
+    <!-- Fallback only. Overridden by the git tag (local) or -p:Version (CI). -->
+    <Version>0.0.0</Version>
+  </PropertyGroup>
+
+  <Target Name="_DeriveVersionFromGitTag"
+          BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo;GenerateNuspec"
+          Condition="'$(Version)' == '0.0.0'">
+    <Exec Command="git describe --tags --match v* --abbrev=0"
+          ConsoleToMSBuild="true"
+          ContinueOnError="true"
+          StandardOutputImportance="low"
+          StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitDescribe" />
+      <Output TaskParameter="ExitCode" PropertyName="_GitExitCode" />
+    </Exec>
+    <PropertyGroup Condition="'$(_GitExitCode)' == '0' And '$(_GitDescribe)' != ''">
+      <Version>$(_GitDescribe.Trim().TrimStart('v'))</Version>
+    </PropertyGroup>
+    <Message Importance="high"
+             Text="CacheNote version (git tag): $(Version)"
+             Condition="'$(_GitExitCode)' == '0' And '$(_GitDescribe)' != ''" />
+  </Target>
+</Project>

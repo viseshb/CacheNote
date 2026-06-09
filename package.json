@@ -1,0 +1,13 @@
+{
+  "name": "cachenote-release",
+  "private": true,
+  "description": "Release tooling only (semantic-release). CacheNote itself is a .NET/WinUI 3 app; this file exists so CI can run semantic-release to compute the version from conventional commits and publish the GitHub Release.",
+  "devDependencies": {
+    "@semantic-release/commit-analyzer": "^13.0.0",
+    "@semantic-release/exec": "^7.0.0",
+    "@semantic-release/github": "^11.0.0",
+    "@semantic-release/release-notes-generator": "^14.0.0",
+    "conventional-changelog-conventionalcommits": "^9.0.0",
+    "semantic-release": "^24.2.0"
+  }
+}

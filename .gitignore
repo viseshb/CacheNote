@@ -23,6 +23,10 @@ colordiag.txt
 /config/
 .portable
 
+# Node (semantic-release tooling only — this is a .NET repo)
+node_modules/
+package-lock.json
+
 # IDE
 .vs/
 *.suo

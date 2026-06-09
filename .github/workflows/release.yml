@@ -1,42 +1,47 @@
 name: Release
 
-# Push to master → bump version, build the self-contained installer, publish a GitHub Release.
-# The in-app updater (M10) reads releases/latest and offers a one-click update.
+# Push to master → semantic-release reads the conventional-commit messages since the
+# last v* tag and decides whether to release and what the next version is:
+#   feat: → minor, fix:/perf:/refactor:/revert: → patch, BREAKING → major,
+#   chore:/docs:/style:/test:/build:/ci: → NO release.
+# When a release is warranted it builds the self-contained installer stamped with the
+# computed version, creates the v<x.y.z> tag, and publishes a GitHub Release with
+# CacheNoteSetup.exe attached. The in-app updater (M10) reads releases/latest.
+# A push with only non-releasing commits produces NO release → no update prompt.
 on:
   push:
     branches: [ master ]
   workflow_dispatch:
 
+# Only release on the owner's commits, never re-run/dispatch by a collaborator.
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
-  build-and-release:
+  release:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # semantic-release needs full history + tags
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
-      - name: Compute version
-        id: ver
-        shell: pwsh
-        run: echo "version=1.0.$($env:GITHUB_RUN_NUMBER)" >> $env:GITHUB_OUTPUT
-
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
-      - name: Build installer
-        shell: pwsh
-        run: ./scripts/build-installer.ps1 -Version ${{ steps.ver.outputs.version }}
+      - name: Install semantic-release
+        run: npm install
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.ver.outputs.version }}
-          name: CacheNote v${{ steps.ver.outputs.version }}
-          files: dist/CacheNoteSetup.exe
+      - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
