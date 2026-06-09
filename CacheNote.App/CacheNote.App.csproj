@@ -93,6 +93,26 @@
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
 
+  <!-- WORKAROUND (WindowsAppSDK #6071): self-contained publish forgets
+       Microsoft.WindowsAppRuntime.Insights.Resource.dll, and AppNotificationManager.Register()
+       then dies with 0x8007007E "module could not be found" — native toasts never show on
+       installed builds. The dll only exists inside the runtime's framework MSIX, so extract
+       it from the NuGet package and ship it next to the exe. Remove when the SDK fixes it. -->
+  <Target Name="ShipWinAppRuntimeInsightsDll" AfterTargets="Build" Condition="'$(WindowsPackageType)' == 'None'">
+    <PropertyGroup>
+      <_InsightsArch>$(RuntimeIdentifier.Replace('win-', 'win10-'))</_InsightsArch>
+      <_InsightsMsix>$(NuGetPackageRoot)microsoft.windowsappsdk.runtime\2.1.3\tools\MSIX\$(_InsightsArch)\Microsoft.WindowsAppRuntime.2.msix</_InsightsMsix>
+      <_InsightsStage>$(IntermediateOutputPath)WinAppRuntimeMsix\</_InsightsStage>
+      <_InsightsDll>$(_InsightsStage)Microsoft.WindowsAppRuntime.Insights.Resource.dll</_InsightsDll>
+    </PropertyGroup>
+    <Unzip Condition="!Exists('$(_InsightsDll)') And Exists('$(_InsightsMsix)')" SourceFiles="$(_InsightsMsix)" DestinationFolder="$(_InsightsStage)" />
+    <Copy Condition="Exists('$(_InsightsDll)')" SourceFiles="$(_InsightsDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Warning Condition="!Exists('$(_InsightsDll)')" Text="Insights.Resource.dll not found in WindowsAppSDK runtime package — native toasts will fail on installed builds." />
+  </Target>
+  <Target Name="PublishWinAppRuntimeInsightsDll" AfterTargets="Publish" Condition="'$(WindowsPackageType)' == 'None' And Exists('$(IntermediateOutputPath)WinAppRuntimeMsix\Microsoft.WindowsAppRuntime.Insights.Resource.dll')">
+    <Copy SourceFiles="$(IntermediateOutputPath)WinAppRuntimeMsix\Microsoft.WindowsAppRuntime.Insights.Resource.dll" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
+
   <!-- Publish Properties -->
   <PropertyGroup>
     <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
