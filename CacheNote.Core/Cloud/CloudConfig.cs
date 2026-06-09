@@ -39,8 +39,10 @@ public sealed class CloudConfig
     public string GeminiModel => Get("GEMINI_MODEL", "gemini-3.5-flash");
 
     // ----- Auto-update (M10) -----
-    public string GithubOwner => Get("GITHUB_OWNER");
-    public string GithubRepo => Get("GITHUB_REPO");
+    // Baked-in defaults (not secrets) so auto-update works in every shipped build, not just dev
+    // .env. A .env entry still overrides for forks/testing.
+    public string GithubOwner => Get("GITHUB_OWNER", "viseshb");
+    public string GithubRepo => Get("GITHUB_REPO", "CacheNote");
 
     // ----- Google Calendar sync (V2; needs a Google Cloud OAuth Desktop client) -----
     public string GoogleClientId => Get("GOOGLE_CLIENT_ID");
