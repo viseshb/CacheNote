@@ -249,8 +249,11 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Style="{StaticResource RowLabel}" Text="Speech provider" TextTrimming="CharacterEllipsis" />
-                                <TextBlock x:Name="SttProviderText" Grid.Column="1" VerticalAlignment="Center" Foreground="{ThemeResource AppTextSecondaryBrush}" />
+                                <TextBlock Grid.Column="0" Style="{StaticResource RowLabel}" Text="Speech (dictation) model" TextTrimming="CharacterEllipsis" />
+                                <ComboBox x:Name="SttProviderCombo" Grid.Column="1" MinWidth="150" AutomationProperties.AutomationId="SttProviderCombo" SelectionChanged="SttProvider_Changed">
+                                    <ComboBoxItem Content="Deepgram (nova-3)" Tag="deepgram" />
+                                    <ComboBoxItem Content="AssemblyAI" Tag="assemblyai" />
+                                </ComboBox>
                             </Grid>
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>

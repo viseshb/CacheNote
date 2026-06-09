@@ -109,10 +109,11 @@ public sealed class E2E_FullSweep
         {
             var w = TestApp.WaitForMainWindow(app, automation);
 
-            // Empty input → a hint, no crash, no actions.
+            // Empty input → Send is disabled (can't send nothing).
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("AiBall"))).AsButton().Invoke();
-            WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("AiChatSend"))).AsButton().Invoke();
-            Thread.Sleep(400);
+            var send = WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("AiChatSend"))).AsButton();
+            Assert.False(send.IsEnabled, "Send must be disabled when the AI input is empty");
+            Thread.Sleep(200);
             Assert.False(app.HasExited);
 
             // Real request → auto-apply. The fake plan favorites a note, so it must appear in Favorites.

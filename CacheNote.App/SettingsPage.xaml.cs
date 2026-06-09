@@ -58,7 +58,8 @@ public sealed partial class SettingsPage : Page
 
         // Cloud key status (masked)
         var cfg = App.GetService<CloudConfig>();
-        SttProviderText.Text = cfg.SttProvider;
+        var sttProvider = _settings.Get("stt_provider") ?? cfg.SttProvider;
+        SttProviderCombo.SelectedIndex = string.Equals(sttProvider, "assemblyai", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         DeepgramKeyText.Text = CloudConfig.Mask(cfg.DeepgramKey);
         AssemblyKeyText.Text = CloudConfig.Mask(cfg.AssemblyAiKey);
         AiProviderText.Text = cfg.AiProvider;
@@ -86,6 +87,14 @@ public sealed partial class SettingsPage : Page
             _ => ElementTheme.Default,
         };
         App.MainShell?.SetTheme(theme);
+    }
+
+    private void SttProvider_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading)
+            return;
+        if (SttProviderCombo.SelectedItem is ComboBoxItem item && item.Tag is string provider)
+            _settings.Set("stt_provider", provider);
     }
 
     private void FontSize_Changed(object sender, SelectionChangedEventArgs e)

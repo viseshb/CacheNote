@@ -348,6 +348,7 @@
                             AutomationProperties.Name="Ask AI"
                             KeyDown="AiInput_KeyDown"
                             PlaceholderText="Ask AI to do something…"
+                            TextChanged="AiInput_TextChanged"
                             TextWrapping="Wrap" />
                         <ToggleButton
                             x:Name="AiMic"
@@ -370,6 +371,7 @@
                             AutomationProperties.AutomationId="AiChatSend"
                             AutomationProperties.Name="Send"
                             Click="AiSend_Click"
+                            IsEnabled="False"
                             Style="{StaticResource AiAccentButton}"
                             ToolTipService.ToolTip="Send">
                             <FontIcon FontSize="15" Foreground="White" Glyph="&#xE724;" />

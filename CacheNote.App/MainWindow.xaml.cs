@@ -322,12 +322,14 @@ public sealed partial class MainWindow : Window
         AppendChatBubble(text, fromUser: true);
         _aiHistory.Add("User: " + text);
         AiInput.Text = "";
-        AiStatus.Text = "Thinking…";
+        // Show "Thinking…" as the next line of the conversation (below the user's message), not above.
+        var thinking = AppendChatBubble("Thinking…", fromUser: false);
         ScrollAiToEnd();
 
         try
         {
             var plan = await svc.PlanAsync(string.Join("\n", _aiHistory));
+            AiConversation.Children.Remove(thinking);
             if (!string.IsNullOrWhiteSpace(plan.Reply))
             {
                 AppendChatBubble(plan.Reply, fromUser: false);
@@ -359,14 +361,18 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            AiConversation.Children.Remove(thinking);
+            AppendChatBubble("AI error: " + ex.Message, fromUser: false);
             AiStatus.Text = "AI error: " + ex.Message;
+            ScrollAiToEnd();
         }
     }
 
-    /// <summary>Append a chat bubble: user bubbles right + accent, assistant bubbles left + subtle.</summary>
-    private void AppendChatBubble(string text, bool fromUser)
+    /// <summary>Append a chat bubble: user bubbles right + accent, assistant bubbles left + subtle.
+    /// Returns the bubble so transient ones (e.g. "Thinking…") can be removed.</summary>
+    private Border AppendChatBubble(string text, bool fromUser)
     {
-        AiConversation.Children.Add(new Border
+        var bubble = new Border
         {
             Background = (Brush)Application.Current.Resources[fromUser ? "AppAccentBrush" : "AppHoverBrush"],
             CornerRadius = new CornerRadius(12),
@@ -380,8 +386,14 @@ public sealed partial class MainWindow : Window
                 FontSize = 13,
                 Foreground = fromUser ? new SolidColorBrush(Microsoft.UI.Colors.White) : (Brush)Application.Current.Resources["AppTextPrimaryBrush"],
             },
-        });
+        };
+        AiConversation.Children.Add(bubble);
+        return bubble;
     }
+
+    /// <summary>Enable Send only when there's something to send.</summary>
+    private void AiInput_TextChanged(object sender, TextChangedEventArgs e)
+        => AiSend.IsEnabled = !string.IsNullOrWhiteSpace(AiInput.Text);
 
     private void ScrollAiToEnd()
     {
