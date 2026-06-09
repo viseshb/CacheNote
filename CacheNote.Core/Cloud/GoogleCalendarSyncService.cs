@@ -295,6 +295,11 @@ public sealed class GoogleCalendarSyncService
                 {
                     using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(ct));
                     var updated = ParseStamp(doc.RootElement, "updated") ?? DateTime.UtcNow;
+                    // Baseline must cover OUR change too: a no-op patch leaves Google's
+                    // "updated" stamp in the past, and a stale baseline re-pushed the same
+                    // event every cycle forever.
+                    if (e.UpdatedUtc > updated)
+                        updated = e.UpdatedUtc;
                     _events.LinkGoogle(e.Id, e.GoogleId, updated);
                     pushed++;
                 }
