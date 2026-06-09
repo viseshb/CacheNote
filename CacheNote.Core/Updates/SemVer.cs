@@ -12,16 +12,25 @@ public static class SemVer
             return false;
 
         s = s.Trim().TrimStart('v', 'V');
-        var dash = s.IndexOf('-');           // drop pre-release / build suffix
-        if (dash >= 0)
-            s = s[..dash];
+        var cut = s.IndexOfAny(['-', '+']);  // drop pre-release AND build metadata ("1.2.3+sha")
+        if (cut >= 0)
+            s = s[..cut];
 
         var parts = s.Split('.', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0)
             return false;
 
-        int Get(int i) => i < parts.Length && int.TryParse(parts[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : 0;
-        version = (Get(0), Get(1), Get(2));
+        // A present-but-non-numeric component is a parse FAILURE, not 0 — coercing to 0 made
+        // "1.2.3+sha" read as (1,2,0) (missed updates) and let garbage parse as (0,0,0).
+        var nums = new int[3];
+        for (var i = 0; i < 3; i++)
+        {
+            if (i >= parts.Length)
+                continue;   // missing component ("1.2") defaults to 0
+            if (!int.TryParse(parts[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out nums[i]))
+                return false;
+        }
+        version = (nums[0], nums[1], nums[2]);
         return true;
     }
 

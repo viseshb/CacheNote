@@ -20,14 +20,40 @@ public static class ReminderMath
     /// week) into a single next fire instead of a backlog. 'once' never advances.
     /// </summary>
     public static DateTime AdvancePastNow(DateTime fire, string repeat, DateTime now)
+        => AdvancePastNow(fire, repeat, now, anchor: fire);
+
+    /// <summary>
+    /// Same, but monthly occurrences are computed from the ORIGINAL <paramref name="anchor"/>
+    /// (anchor.AddMonths(n)), never by chaining AddMonths on the previous fire — chaining
+    /// permanently decays a 31st-of-month reminder to the 28th after it crosses February.
+    /// </summary>
+    public static DateTime AdvancePastNow(DateTime fire, string repeat, DateTime now, DateTime anchor)
     {
-        if (repeat == RepeatKinds.Once)
+        if (repeat == RepeatKinds.Once || fire > now)
             return fire;
 
-        var next = fire;
-        for (var guard = 0; next <= now && guard < 100_000; guard++)
-            next = NextOccurrence(next, repeat);
-        return next;
+        // Cheap lower-bound start index (may undershoot, never overshoots).
+        var days = (now - anchor).TotalDays;
+        var n = (int)Math.Max(1, repeat switch
+        {
+            RepeatKinds.Daily => (long)days - 1,
+            RepeatKinds.Weekly => (long)(days / 7) - 1,
+            RepeatKinds.Monthly => (long)(days / 32) - 1,
+            _ => 0L,
+        });
+        for (var guard = 0; guard < 100_000; guard++, n++)
+        {
+            var occ = repeat switch
+            {
+                RepeatKinds.Daily => anchor.AddDays(n),
+                RepeatKinds.Weekly => anchor.AddDays(7L * n),
+                RepeatKinds.Monthly => anchor.AddMonths(n),
+                _ => anchor,
+            };
+            if (occ > now)
+                return occ;
+        }
+        return fire;
     }
 }
 
@@ -81,7 +107,7 @@ public sealed class ReminderService : IReminderService
             else
             {
                 var baseTime = r.NextFireUtc ?? r.RemindUtc;
-                var next = ReminderMath.AdvancePastNow(baseTime, r.Repeat, nowUtc);
+                var next = ReminderMath.AdvancePastNow(baseTime, r.Repeat, nowUtc, anchor: r.RemindUtc);
                 _repo.UpdateSchedule(r.Id, next, snoozeUntilUtc: null, dismissed: false);
             }
         }

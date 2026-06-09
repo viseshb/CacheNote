@@ -26,6 +26,10 @@ WizardStyle=modern
 UninstallDisplayIcon={app}\{#MyAppExe}
 ; Self-contained build runs everywhere; min OS Win10 2004.
 MinVersion=10.0.19041
+; The app intercepts WM_CLOSE and hides to the tray (it never actually closes), so the default
+; Restart-Manager close request leaves the process alive with every DLL in {app} locked —
+; upgrades (incl. the in-app auto-update flow) then fail with "files in use". Force-kill it.
+CloseApplications=force
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -39,7 +43,9 @@ Name: "startup"; Description: "Start CacheNote when I sign in"; GroupDescription
 Source: "..\publish\win-x64\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; Ship the secrets template, and seed a writable .env in the app folder if one isn't there yet.
 Source: "..\.env.example"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\.env.example"; DestDir: "{app}"; DestName: ".env"; Flags: onlyifdoesntexist
+; uninsneveruninstall: the user pastes their API keys into this file — never delete it on
+; uninstall (Inno otherwise removes onlyifdoesntexist-seeded files too).
+Source: "..\.env.example"; DestDir: "{app}"; DestName: ".env"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Icons]
 Name: "{group}\CacheNote"; Filename: "{app}\{#MyAppExe}"; AppUserModelID: "{#MyAumid}"

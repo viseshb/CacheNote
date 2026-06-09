@@ -51,8 +51,9 @@ public sealed class SearchService : ISearchService
     }
 
     /// <summary>
-    /// Turn free text into a safe FTS5 MATCH expression: each word becomes a prefix term
-    /// (word*), stripped of punctuation so special characters can't break the query syntax.
+    /// Turn free text into a safe FTS5 MATCH expression: each word becomes a QUOTED prefix
+    /// term ("word"*). Quoting is required — a bare uppercase AND/OR/NOT is an FTS5 operator
+    /// and throws "fts5: syntax error" (typing the word AND in the search box crashed the app).
     /// </summary>
     private static string? BuildFtsMatch(string query)
     {
@@ -63,7 +64,7 @@ public sealed class SearchService : ISearchService
             .Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
             .Select(t => new string(t.Where(char.IsLetterOrDigit).ToArray()))
             .Where(t => t.Length > 0)
-            .Select(t => t + "*");
+            .Select(t => "\"" + t + "\"*");
 
         var match = string.Join(" ", terms);
         return string.IsNullOrEmpty(match) ? null : match;

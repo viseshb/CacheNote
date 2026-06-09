@@ -76,14 +76,24 @@ public sealed class GitHubUpdateService
         }
     }
 
+    // Separate client for the installer download: the API client's 30s Timeout covers the WHOLE
+    // body, and a ~78MB asset needs >20Mbps to finish in 30s — slower links failed every time.
+    private static readonly HttpClient Download = new() { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+
     /// <summary>Download the setup asset and launch it (installs over the current copy).</summary>
     public async Task<bool> DownloadAndRunAsync(string url, CancellationToken ct = default)
     {
         try
         {
-            var tmp = Path.Combine(Path.GetTempPath(), "CacheNoteSetup.exe");
-            var bytes = await Http.GetByteArrayAsync(url, ct);
-            await File.WriteAllBytesAsync(tmp, bytes, ct);
+            // Unique temp name: a fixed path collides with a still-running/locked previous setup.
+            var tmp = Path.Combine(Path.GetTempPath(), $"CacheNoteSetup-{Guid.NewGuid():N}.exe");
+            using (var resp = await Download.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct))
+            {
+                resp.EnsureSuccessStatusCode();
+                await using var src = await resp.Content.ReadAsStreamAsync(ct);
+                await using var dst = File.Create(tmp);
+                await src.CopyToAsync(dst, ct);
+            }
             Process.Start(new ProcessStartInfo { FileName = tmp, UseShellExecute = true });
             return true;
         }

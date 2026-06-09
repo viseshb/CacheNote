@@ -230,8 +230,10 @@ public sealed partial class CalendarViewModel : ObservableObject
         }
         else // Agenda
         {
+            // 30-day inclusive window matching the 30-day Prev/Next step — AddDays(30) made a
+            // 31-day window, so the boundary day's items showed on two consecutive pages.
             windowStart = _anchor.Date;
-            windowEnd = _anchor.Date.AddDays(30);
+            windowEnd = _anchor.Date.AddDays(29);
             PeriodLabel = $"{windowStart:MMM d} – {windowEnd:MMM d}";
         }
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Dapper;
 using CacheNote.Core.Models;
 
@@ -36,7 +37,18 @@ public sealed class ReminderRepository : IReminderRepository
             INSERT INTO reminders(note_id, task_id, remind_utc, message, repeat, next_fire_utc, snooze_until_utc, is_dismissed)
             VALUES (@NoteId, @TaskId, @RemindUtc, @Message, @Repeat, @NextFireUtc, @SnoozeUntilUtc, @IsDismissed);
             SELECT last_insert_rowid();
-            """, reminder);
+            """,
+            new
+            {
+                reminder.NoteId,
+                reminder.TaskId,
+                RemindUtc = Iso(reminder.RemindUtc),
+                reminder.Message,
+                reminder.Repeat,
+                NextFireUtc = IsoOrNull(reminder.NextFireUtc),
+                SnoozeUntilUtc = IsoOrNull(reminder.SnoozeUntilUtc),
+                reminder.IsDismissed,
+            });
     }
 
     public Reminder? GetById(long id)
@@ -53,7 +65,7 @@ public sealed class ReminderRepository : IReminderRepository
              SELECT * FROM reminders
              WHERE is_dismissed = 0 AND {Effective} <= @nowUtc
              ORDER BY {Effective};
-             """, new { nowUtc }).AsList();
+             """, new { nowUtc = Iso(nowUtc) }).AsList();
     }
 
     public IReadOnlyList<Reminder> GetAll()
@@ -71,7 +83,7 @@ public sealed class ReminderRepository : IReminderRepository
             UPDATE reminders
             SET next_fire_utc = @nextFireUtc, snooze_until_utc = @snoozeUntilUtc, is_dismissed = @dismissed
             WHERE id = @id;
-            """, new { id, nextFireUtc, snoozeUntilUtc, dismissed });
+            """, new { id, nextFireUtc = IsoOrNull(nextFireUtc), snoozeUntilUtc = IsoOrNull(snoozeUntilUtc), dismissed });
     }
 
     public void UpdateDetails(long id, string? message, DateTime remindUtc, string repeat, DateTime nextFireUtc)
@@ -83,7 +95,7 @@ public sealed class ReminderRepository : IReminderRepository
             SET message = @message, remind_utc = @remindUtc, repeat = @repeat,
                 next_fire_utc = @nextFireUtc, snooze_until_utc = NULL, is_dismissed = 0
             WHERE id = @id;
-            """, new { id, message, remindUtc, repeat, nextFireUtc });
+            """, new { id, message, remindUtc = Iso(remindUtc), repeat, nextFireUtc = Iso(nextFireUtc) });
     }
 
     public void Delete(long id)
@@ -91,4 +103,11 @@ public sealed class ReminderRepository : IReminderRepository
         using var conn = _factory.Create();
         conn.Execute("DELETE FROM reminders WHERE id = @id;", new { id });
     }
+
+    // Dapper's built-in DateTime binding bypasses our UtcDateTimeHandler for PARAMETERS
+    // (its primitive type map wins), and Microsoft.Data.Sqlite would then store a
+    // space-separated string with no 'Z'. Pre-format to ISO-8601 UTC like every other
+    // repository so storage format and SQL string comparisons stay consistent.
+    private static string Iso(DateTime dt) => dt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+    private static string? IsoOrNull(DateTime? dt) => dt.HasValue ? Iso(dt.Value) : null;
 }

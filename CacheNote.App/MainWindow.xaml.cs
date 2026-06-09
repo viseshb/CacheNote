@@ -140,19 +140,33 @@ public sealed partial class MainWindow : Window
 
     private void PollReminders()
     {
-        // Paused → don't fire (and don't advance, so they fire once unpaused).
-        if (App.GetService<ISettingsService>().GetBool("pause_notifications"))
-            return;
+        // Guard the whole tick: this runs every 20s for the app's lifetime (incl. tray-resident);
+        // one transient SQLite error must not crash a tray app the user believes is running.
+        try
+        {
+            // Paused → don't fire (and don't advance, so they fire once unpaused).
+            if (App.GetService<ISettingsService>().GetBool("pause_notifications"))
+                return;
 
-        var due = App.GetService<IReminderService>().GetDueAndAdvance(DateTime.UtcNow);
-        if (due.Count == 0)
-            return;
+            var due = App.GetService<IReminderService>().GetDueAndAdvance(DateTime.UtcNow);
 
-        var toast = App.GetService<ToastService>();
-        foreach (var r in due)
-            toast.ShowReminder(r.Id, r.Message);
+            // Re-arm alerts of recurring events whose one-shot alert already fired — without
+            // this, a weekly meeting's alert fires exactly once, ever.
+            App.GetService<EventService>().ResyncRecurringAlerts();
 
-        RefreshRemindersIfOpen();
+            if (due.Count == 0)
+                return;
+
+            var toast = App.GetService<ToastService>();
+            foreach (var r in due)
+                toast.ShowReminder(r.Id, r.Message);
+
+            RefreshRemindersIfOpen();
+        }
+        catch
+        {
+            // Transient DB/toast failure — try again on the next tick.
+        }
     }
 
     /// <summary>Reload the Reminders list if that page is currently shown.</summary>
@@ -465,10 +479,17 @@ public sealed partial class MainWindow : Window
         stt.ErrorOccurred += OnAiSttError;
         await stt.StartAsync(CancellationToken.None);
 
-        // If the user toggled the mic off (or another session claimed it) during startup, stop cleanly.
+        // If the user toggled the mic off (or another session claimed it) during startup, stop
+        // THIS session — calling the field-based stop here would tear down whatever NEW session
+        // _aiStt now points to and leave this one silently streaming (and billing).
         if (AiMic.IsChecked != true || !ReferenceEquals(_aiStt, stt))
         {
-            await StopAiDictationAsync();
+            stt.PartialReceived -= OnAiSttPartial;
+            stt.FinalReceived -= OnAiSttFinal;
+            stt.ErrorOccurred -= OnAiSttError;
+            try { await stt.StopAsync(); } catch { /* best effort */ }
+            if (ReferenceEquals(_aiStt, stt))
+                await StopAiDictationAsync();   // ours → full cleanup (mic, coordinator, UI)
             return;
         }
 
@@ -532,8 +553,15 @@ public sealed partial class MainWindow : Window
             AiStatus.Text = "";   // clear the listening indicator so it doesn't stick
     }
 
-    private void Tray_Exit(object sender, RoutedEventArgs e)
+    private void Tray_Exit(object sender, RoutedEventArgs e) => ExitApp();
+
+    /// <summary>Real exit (tray Exit / update install): flush pending edits, then tear down.</summary>
+    private void ExitApp()
     {
+        // The 600ms debounced autosave means continuous typing is unsaved — flush it
+        // before the process dies or the loss window is the whole typing burst.
+        try { (RootFrame.Content as MainPage)?.FlushPendingSave(); } catch { /* never block exit */ }
+
         _exiting = true;
         SaveWindowState();
         _reminderTimer?.Stop();
@@ -577,10 +605,20 @@ public sealed partial class MainWindow : Window
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = RootGrid.XamlRoot,
             };
+            // Only an explicit "Later" click mutes this version. ContentDialogResult.None is ALSO
+            // returned when DialogHost force-replaces this dialog with another one — recording
+            // that as a skip would permanently mute a version the user never saw.
+            var laterClicked = false;
+            dialog.CloseButtonClick += (_, _) => laterClicked = true;
             if (await DialogHost.ShowAsync(dialog) == ContentDialogResult.Primary)
-                await svc.DownloadAndRunAsync(result.DownloadUrl!);
-            else
+            {
+                if (await svc.DownloadAndRunAsync(result.DownloadUrl!))
+                    ExitApp();   // release our file locks so the installer can replace us
+            }
+            else if (laterClicked)
+            {
                 settings.Set(SkippedUpdateKey, result.LatestVersion);   // remember the dismissal
+            }
         }
         catch { /* never block startup on the update check */ }
     }
@@ -615,7 +653,9 @@ public sealed partial class MainWindow : Window
                 update.IsEnabled = false;
                 status.Text = "Downloading the installer…";
                 var ok = await svc.DownloadAndRunAsync(result.DownloadUrl!);
-                status.Text = ok ? "Installer launched — CacheNote will update." : "Download failed. Try again later.";
+                status.Text = ok ? "Installer launched — CacheNote will close and update." : "Download failed. Try again later.";
+                if (ok)
+                    ExitApp();   // OnClosing cancels WM_CLOSE (hide-to-tray), so the installer can never close us — exit ourselves
             };
             panel.Children.Add(update);
         }
@@ -645,7 +685,13 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Shrink to a small always-handy note window (~square).</summary>
-    public void EnterCompactMode() => AppWindow.Resize(new SizeInt32(380, 480));
+    public void EnterCompactMode()
+    {
+        // Resize takes PHYSICAL pixels; the minimum-size floor is DIP-scaled (380×520).
+        // Unscaled, compact mode was clamped at 100% and a no-op at 150%+ DPI.
+        var scale = RootGrid.XamlRoot?.RasterizationScale ?? 1.0;
+        AppWindow.Resize(new SizeInt32((int)(380 * scale), (int)(520 * scale)));
+    }
 
     public void DockLeft() => DockHalf(left: true);
 
@@ -664,7 +710,8 @@ public sealed partial class MainWindow : Window
     /// <summary>Return to the default centered window size.</summary>
     public void RestoreWindow()
     {
-        AppWindow.Resize(new SizeInt32(1100, 720));
+        var scale = RootGrid.XamlRoot?.RasterizationScale ?? 1.0;
+        AppWindow.Resize(new SizeInt32((int)(1100 * scale), (int)(720 * scale)));
         CenterOnScreen();
     }
 

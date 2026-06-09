@@ -19,6 +19,7 @@ using CacheNote.Core.Ui;
 using CacheNote.Core.ViewModels;
 using CacheNote_App.Controls;
 using CacheNote_App.Services;
+using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
@@ -539,16 +540,22 @@ public sealed partial class MainPage : Page
 
     private async void Editor_Drop(object sender, DragEventArgs e)
     {
-        if (Vm.CurrentNoteId == 0 || !e.DataView.Contains(StandardDataFormats.StorageItems))
-            return;
-        foreach (var item in await e.DataView.GetStorageItemsAsync())
+        // Guarded end-to-end: virtual drops (image from a browser, Outlook attachment, file
+        // inside a .zip) have StorageFile.Path == "" and would crash this async-void handler.
+        try
         {
-            if (item is StorageFile file && IsImageExt(file.FileType))
+            if (Vm.CurrentNoteId == 0 || !e.DataView.Contains(StandardDataFormats.StorageItems))
+                return;
+            foreach (var item in await e.DataView.GetStorageItemsAsync())
             {
-                var bytes = await File.ReadAllBytesAsync(file.Path);
-                SaveAttachment(bytes, file.FileType);
+                if (item is StorageFile file && IsImageExt(file.FileType))
+                {
+                    var buffer = await FileIO.ReadBufferAsync(file);   // works for path-less virtual files too
+                    SaveAttachment(buffer.ToArray(), file.FileType);
+                }
             }
         }
+        catch { /* unreadable drop source — ignore */ }
     }
 
     private static bool IsImageExt(string ext)
@@ -587,9 +594,13 @@ public sealed partial class MainPage : Page
     /// <summary>Refresh the notes list + tag filter after the AI applied actions.</summary>
     public void ReloadAfterAi()
     {
+        SaveNow();   // reload re-selects a note — flush pending edits first
         Vm.LoadList();
         RefreshTagFilter();
     }
+
+    /// <summary>Flush the debounced autosave immediately (called on real app exit / update install).</summary>
+    public void FlushPendingSave() => SaveNow();
 
     // ----- list management -----
     private void NotesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1042,6 +1053,10 @@ public sealed partial class MainPage : Page
         if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
             return;
 
+        // Filtering re-selects a note and reloads the editor; flush pending edits first or a
+        // typing burst (never older than the 600ms debounce) is silently discarded.
+        SaveNow();
+
         var q = sender.Text?.Trim() ?? "";
         if (q.Length == 0)
         {
@@ -1061,6 +1076,7 @@ public sealed partial class MainPage : Page
             return;
         if (TagFilter.SelectedItem is ComboBoxItem item && item.Tag is long id)
         {
+            SaveNow();   // same as search: the filter switches notes — don't drop pending edits
             if (id == 0)
             {
                 Vm.ApplyFilter(null, null);
@@ -1115,10 +1131,17 @@ public sealed partial class MainPage : Page
 
         await stt.StartAsync(CancellationToken.None);
 
-        // Toggled off (or another session claimed the mic) during startup → stop cleanly.
+        // Toggled off (or another session claimed the mic) during startup → stop THIS session.
+        // The field-based stop would tear down whatever NEW session _stt now points to and
+        // leave this one silently streaming.
         if (MicButton.IsChecked != true || !ReferenceEquals(_stt, stt))
         {
-            await StopDictationAsync();
+            stt.PartialReceived -= OnSttPartial;
+            stt.FinalReceived -= OnSttFinal;
+            stt.ErrorOccurred -= OnSttError;
+            try { await stt.StopAsync(); } catch { /* best effort */ }
+            if (ReferenceEquals(_stt, stt))
+                await StopDictationAsync();
             return;
         }
 
@@ -1174,7 +1197,9 @@ public sealed partial class MainPage : Page
             _stt.PartialReceived -= OnSttPartial;
             _stt.FinalReceived -= OnSttFinal;
             _stt.ErrorOccurred -= OnSttError;
-            await _stt.StopAsync();
+            // Guarded like the MainWindow copy: a WS teardown failure inside async-void
+            // Mic_Click would otherwise crash the process.
+            try { await _stt.StopAsync(); } catch { /* best effort */ }
             _stt = null;
         }
         DictationCoordinator.Release(this);

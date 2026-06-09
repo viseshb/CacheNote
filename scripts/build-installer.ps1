@@ -1,11 +1,23 @@
 # Build CacheNoteSetup.exe: self-contained publish, then compile the Inno Setup script.
-# Usage:  pwsh scripts\build-installer.ps1 [-Version 1.0.0]
+# Usage:  pwsh scripts\build-installer.ps1 [-Version 1.2.3]
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version = "",
     [string]$Rid = "win-x64"
 )
 
 $ErrorActionPreference = "Stop"
+
+# No hardcoded default: a stale "1.0.0" built a DOWNGRADING installer (Inno has no version
+# gate on the same AppId) and the updater then nagged forever. Derive from the latest v* tag.
+if (-not $Version) {
+    $tag = git describe --tags --match "v*" --abbrev=0 2>$null
+    if ($LASTEXITCODE -eq 0 -and $tag) {
+        $Version = $tag.Trim().TrimStart("v")
+        Write-Host "==> No -Version given; using latest git tag: $Version" -ForegroundColor Yellow
+    } else {
+        throw "No -Version given and no v* git tag found. Pass -Version explicitly."
+    }
+}
 $root = Split-Path -Parent $PSScriptRoot
 $publishDir = Join-Path $root "publish\$Rid"
 $app = Join-Path $root "CacheNote.App\CacheNote.App.csproj"

@@ -74,6 +74,13 @@ public partial class App : Application
             MainShell = _window as MainWindow;
             _window.Activate();
 
+            // A toast "Open" click that cold-started the app arrived before the window existed.
+            if (_pendingOpenReminders && _window is MainWindow shell)
+            {
+                _pendingOpenReminders = false;
+                shell.NavigateToReminders();
+            }
+
             log.LogInformation("CacheNote launched in {Elapsed} ms (cold start).",
                 ColdStartTimer.ElapsedMilliseconds);
         }
@@ -111,16 +118,31 @@ public partial class App : Application
         int.TryParse(args.GetValueOrDefault("min"), out var min);
 
         var reminders = GetService<IReminderService>();
+
+        // Complete/Snooze are DB-only — run them immediately, NOT via the window dispatcher.
+        // When the app is cold-started by a toast click this fires while _window is still null,
+        // and dispatcher-routing silently dropped the action (the reminder stayed active even
+        // though the user clicked "Complete").
+        switch (action)
+        {
+            case "complete":
+                reminders.Complete(id);
+                break;
+            case "snooze":
+                reminders.Snooze(id, min <= 0 ? 5 : min, DateTime.UtcNow);
+                break;
+            default:
+                if (_window is null)
+                    _pendingOpenReminders = true;   // window not built yet — navigate after launch
+                break;
+        }
+
         _window?.DispatcherQueue.TryEnqueue(() =>
         {
             switch (action)
             {
                 case "complete":
-                    reminders.Complete(id);
-                    RefreshRemindersUi();
-                    break;
                 case "snooze":
-                    reminders.Snooze(id, min <= 0 ? 5 : min, DateTime.UtcNow);
                     RefreshRemindersUi();
                     break;
                 default: // "open", or the toast body itself
@@ -133,6 +155,8 @@ public partial class App : Application
             }
         });
     }
+
+    private bool _pendingOpenReminders;
 
     private void RefreshRemindersUi()
     {

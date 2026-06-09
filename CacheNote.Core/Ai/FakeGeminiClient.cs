@@ -14,7 +14,7 @@ public sealed class FakeGeminiClient : IGeminiClient
         if (jsonSchema is not null)
         {
             // Canned conversational plan referencing the user's instruction; exercises every action type.
-            var safe = userPrompt.Replace("\"", "'").Replace("\r", " ").Replace("\n", " ");
+            var safe = userPrompt.Replace("\\", "/").Replace("\"", "'").Replace("\r", " ").Replace("\n", " ");
             if (safe.Length > 60) safe = safe[..60];
             var json = """
             {

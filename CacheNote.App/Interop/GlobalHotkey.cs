@@ -31,8 +31,11 @@ public sealed class GlobalHotkey : IDisposable
         _hookProc = HookProc;
 
         _oldProc = SetWindowLongPtr(_hwnd, GWLP_WNDPROC, Marshal.GetFunctionPointerForDelegate(_hookProc));
-        RegisterHotKey(_hwnd, HotkeyId, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, virtualKey);
+        IsRegistered = RegisterHotKey(_hwnd, HotkeyId, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, virtualKey);
     }
+
+    /// <summary>False when another app already owns the hotkey (registration silently failed).</summary>
+    public bool IsRegistered { get; }
 
     private IntPtr HookProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {

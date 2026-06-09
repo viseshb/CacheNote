@@ -75,8 +75,12 @@ public static class CoreServiceCollectionExtensions
         public override void SetValue(IDbDataParameter parameter, DateTime value)
             => parameter.Value = value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
 
+        // Everything in the DB is a UTC instant. AssumeUniversal (not .ToUniversalTime()) is
+        // load-bearing: legacy rows stored without a trailing 'Z' parse as Kind=Unspecified,
+        // and ToUniversalTime() would treat them as LOCAL — shifting every read by the
+        // machine's UTC offset (a daily reminder then re-fires every |offset| hours).
         public override DateTime Parse(object value)
-            => DateTime.Parse((string)value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)
-                       .ToUniversalTime();
+            => DateTime.Parse((string)value, CultureInfo.InvariantCulture,
+                              DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
     }
 }

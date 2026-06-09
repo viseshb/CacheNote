@@ -17,7 +17,17 @@ internal static class DialogHost
 
     public static async Task<ContentDialogResult> ShowAsync(ContentDialog dialog)
     {
-        try { _open?.Hide(); } catch { /* best effort */ }
+        // Hide() only BEGINS an async close — WinUI's one-dialog gate clears when the old
+        // dialog actually finishes closing, so calling ShowAsync in the same tick can still
+        // throw the very COMException this class exists to prevent. Await the close first.
+        if (_open is { } previous)
+        {
+            var closed = new TaskCompletionSource();
+            previous.Closed += (_, _) => closed.TrySetResult();
+            try { previous.Hide(); } catch { closed.TrySetResult(); }
+            await Task.WhenAny(closed.Task, Task.Delay(2000));   // never deadlock on a stuck dialog
+        }
+
         _open = dialog;
         try
         {

@@ -43,8 +43,15 @@ public sealed class TagRepository : ITagRepository
 
     public void Rename(long id, string name)
     {
+        name = name.Trim();
         using var conn = _factory.Create();
-        conn.Execute("UPDATE tags SET name = @name WHERE id = @id;", new { id, name = name.Trim() });
+        // tags.name is UNIQUE — renaming onto an existing tag would throw an unhandled
+        // SqliteException into the UI. Skip the no-op/conflict cases instead.
+        var taken = conn.ExecuteScalar<long?>(
+            "SELECT id FROM tags WHERE name = @name COLLATE NOCASE AND id <> @id;", new { id, name });
+        if (taken is not null)
+            return;
+        conn.Execute("UPDATE tags SET name = @name WHERE id = @id;", new { id, name });
     }
 
     public void SetColor(long id, string colorHex)

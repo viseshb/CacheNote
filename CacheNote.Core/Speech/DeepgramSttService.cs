@@ -69,7 +69,13 @@ public sealed class DeepgramSttService : ISpeechToTextService
             {
                 var close = Encoding.UTF8.GetBytes("{\"type\":\"CloseStream\"}");
                 await _ws.SendAsync(close, WebSocketMessageType.Text, true, CancellationToken.None);
-                await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+                // CloseOutputAsync, NOT CloseAsync: CloseAsync performs its own receive, which
+                // collides with the receive loop's pending ReceiveAsync (only one allowed) and
+                // threw InvalidOperationException — no clean handshake ever happened. Then give
+                // the loop a moment to drain the finals Deepgram flushes after CloseStream, so
+                // the last utterance before toggling the mic off isn't dropped.
+                await _ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+                await Task.Delay(750);
             }
         }
         catch { /* ignore */ }

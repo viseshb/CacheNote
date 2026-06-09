@@ -13,15 +13,21 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
-# Only release on the owner's commits, never re-run/dispatch by a collaborator.
 permissions:
   contents: write
   issues: write
   pull-requests: write
 
+# Two quick pushes must not race two semantic-release runs (duplicate/conflicting tags).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: windows-latest
+    # Owner-only: a collaborator's push/dispatch must not cut a release.
+    if: github.triggering_actor == github.repository_owner
     steps:
       - uses: actions/checkout@v4
         with:

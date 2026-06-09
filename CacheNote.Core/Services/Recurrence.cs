@@ -15,15 +15,20 @@ public static class Recurrence
             yield break;
         }
 
-        var occ = start;
+        // Occurrence n is always computed from the ORIGINAL start (start.AddMonths(n)), never by
+        // stepping the previous occurrence. Iterative stepping permanently loses the anchor day:
+        // monthly from Jan 31 would clamp to Feb 28 and then stay on the 28th forever, and a
+        // Feb 29 birthday would never return to Feb 29 on later leap years.
+        var n = FirstIndexOnOrAfter(start, recurrence, windowStart.Date);
         var guard = 0;
-        while (occ.Date < windowStart.Date && guard++ < 20000)
-            occ = Step(occ, recurrence);
-        while (occ.Date <= windowEnd.Date && guard++ < 20000)
+        while (guard++ < 20000)
         {
+            var occ = Nth(start, recurrence, n);
+            if (occ.Date > windowEnd.Date)
+                yield break;
             if (occ.Date >= windowStart.Date)
                 yield return occ;
-            occ = Step(occ, recurrence);
+            n++;
         }
     }
 
@@ -32,19 +37,37 @@ public static class Recurrence
     {
         if (recurrence == EventRecurrence.None)
             return startUtc;
-        var occ = startUtc;
+        var n = FirstIndexOnOrAfter(startUtc, recurrence, after);
         var guard = 0;
-        while (occ < after && guard++ < 200000)
-            occ = Step(occ, recurrence);
-        return occ;
+        while (Nth(startUtc, recurrence, n) < after && guard++ < 1000)
+            n++;
+        return Nth(startUtc, recurrence, n);
     }
 
-    private static DateTime Step(DateTime d, string recurrence) => recurrence switch
+    /// <summary>The n-th occurrence, anchored to the original start.</summary>
+    private static DateTime Nth(DateTime start, string recurrence, int n) => recurrence switch
     {
-        EventRecurrence.Daily => d.AddDays(1),
-        EventRecurrence.Weekly => d.AddDays(7),
-        EventRecurrence.Monthly => d.AddMonths(1),
-        EventRecurrence.Yearly => d.AddYears(1),
-        _ => d.AddYears(1000),
+        EventRecurrence.Daily => start.AddDays(n),
+        EventRecurrence.Weekly => start.AddDays(7L * n),
+        EventRecurrence.Monthly => start.AddMonths(n),
+        EventRecurrence.Yearly => start.AddYears(n),
+        _ => n == 0 ? start : DateTime.MaxValue,
     };
+
+    /// <summary>Cheap lower-bound estimate of the first occurrence index landing on/after <paramref name="target"/> (may undershoot, never overshoots).</summary>
+    private static int FirstIndexOnOrAfter(DateTime start, string recurrence, DateTime target)
+    {
+        if (target <= start)
+            return 0;
+        var span = target - start;
+        var n = recurrence switch
+        {
+            EventRecurrence.Daily => (long)span.TotalDays - 1,
+            EventRecurrence.Weekly => (long)(span.TotalDays / 7) - 1,
+            EventRecurrence.Monthly => (long)(span.TotalDays / 32) - 1,
+            EventRecurrence.Yearly => (long)(span.TotalDays / 367) - 1,
+            _ => 0L,
+        };
+        return (int)Math.Max(0, n);
+    }
 }

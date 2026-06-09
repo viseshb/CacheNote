@@ -20,11 +20,14 @@ public sealed class SqliteConnectionFactory : IDbConnectionFactory
         // Ensure the data directory exists before anyone tries to open the file.
         paths.EnsureCreated();
 
+        // No Shared cache: shared-cache mode uses table-level locks that surface as
+        // SQLITE_LOCKED (which busy_timeout does NOT retry) and defeats WAL's
+        // reader/writer concurrency. Private cache + WAL + busy_timeout is the
+        // standard pairing.
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = paths.DatabaseFile,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
             ForeignKeys = true,
             Pooling = true,
         }.ToString();

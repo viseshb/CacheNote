@@ -65,9 +65,11 @@ public sealed class CloudConfig
         }
     }
 
-    /// <summary>Redact a secret for logging (keeps the last 4 chars).</summary>
+    /// <summary>Redact a secret for logging (keeps the last 4 chars; short secrets are fully masked).</summary>
     public static string Mask(string? secret)
-        => string.IsNullOrEmpty(secret) ? "(none)" : new string('•', Math.Max(0, secret.Length - 4)) + secret[^Math.Min(4, secret.Length)..];
+        => string.IsNullOrEmpty(secret) ? "(none)"
+            : secret.Length <= 8 ? new string('•', secret.Length)
+            : new string('•', secret.Length - 4) + secret[^4..];
 
     private static Dictionary<string, string> Load(string path)
     {
@@ -86,7 +88,17 @@ public sealed class CloudConfig
             var key = line[..eq].Trim();
             var val = line[(eq + 1)..].Trim();
             if (val.Length >= 2 && ((val[0] == '"' && val[^1] == '"') || (val[0] == '\'' && val[^1] == '\'')))
+            {
                 val = val[1..^1];
+            }
+            else
+            {
+                // Unquoted values: strip trailing inline comments ("KEY=abc # prod" → "abc"),
+                // otherwise the comment rides along into the API key and auth fails confusingly.
+                var hash = val.IndexOf(" #", StringComparison.Ordinal);
+                if (hash >= 0)
+                    val = val[..hash].TrimEnd();
+            }
             map[key] = val;
         }
         return map;

@@ -45,24 +45,45 @@ public sealed class GeminiClient : IGeminiClient
             generationConfig,
         };
 
+        // Both providers accept the x-goog-api-key header; never put the key in the URL
+        // (query strings end up in proxies/traces).
         var url = useVertex
             ? $"{_cfg.VertexBaseUrl}/publishers/google/models/{model}:generateContent"
-            : $"{_cfg.GeminiBaseUrl}/models/{model}:generateContent?key={_cfg.GeminiKey}";
+            : $"{_cfg.GeminiBaseUrl}/models/{model}:generateContent";
 
         using var req = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
         };
-        if (useVertex)
-            req.Headers.TryAddWithoutValidation("x-goog-api-key", _cfg.VertexKey);
+        req.Headers.TryAddWithoutValidation("x-goog-api-key", useVertex ? _cfg.VertexKey : _cfg.GeminiKey);
 
         using var resp = await Http.SendAsync(req, ct);
         var text = await resp.Content.ReadAsStringAsync(ct);
         if (!resp.IsSuccessStatusCode)
             throw new InvalidOperationException($"AI request failed ({(int)resp.StatusCode}). {Truncate(text, 300)}");
 
+        // A safety-blocked prompt returns HTTP 200 with NO candidates (promptFeedback.blockReason
+        // only), and a blocked/empty candidate can lack content/parts — GetProperty would throw
+        // KeyNotFoundException and the raw exception text landed in the chat bubble.
         using var doc = JsonDocument.Parse(text);
-        var parts = doc.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts");
+        if (!doc.RootElement.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)
+        {
+            var reason = doc.RootElement.TryGetProperty("promptFeedback", out var fb) &&
+                         fb.TryGetProperty("blockReason", out var br) ? br.GetString() : null;
+            throw new InvalidOperationException(reason is null
+                ? "The AI returned an empty response. Try rephrasing."
+                : $"The AI blocked this request ({reason}). Try rephrasing.");
+        }
+
+        var candidate = candidates[0];
+        if (!candidate.TryGetProperty("content", out var content) || !content.TryGetProperty("parts", out var parts))
+        {
+            var finish = candidate.TryGetProperty("finishReason", out var fr) ? fr.GetString() : null;
+            throw new InvalidOperationException(finish == "MAX_TOKENS"
+                ? "The AI response was cut off — try a shorter request."
+                : $"The AI returned no text ({finish ?? "empty"}). Try rephrasing.");
+        }
+
         var sb = new StringBuilder();
         foreach (var p in parts.EnumerateArray())
             if (p.TryGetProperty("text", out var t))

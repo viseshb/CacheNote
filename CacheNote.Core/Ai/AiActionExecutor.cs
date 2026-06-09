@@ -40,10 +40,14 @@ public sealed class AiActionExecutor
     public string Apply(IReadOnlyList<AiAction> actions, long? currentNoteId)
     {
         long lastNoteId = currentNoteId ?? 0;
-        int notes = 0, checklists = 0, tasks = 0, tags = 0, reminders = 0, events = 0;
+        int notes = 0, checklists = 0, tasks = 0, tags = 0, reminders = 0, events = 0, failed = 0;
 
         foreach (var a in actions)
         {
+            // Guard each action: without this, action 3 of 5 throwing meant actions 1–2 were
+            // silently persisted, the user saw only "AI error", and a natural retry duplicated them.
+            try
+            {
             switch (a.Action)
             {
                 case AiActionKinds.CreateNote:
@@ -95,9 +99,15 @@ public sealed class AiActionExecutor
                     events++;
                     break;
             }
+            }
+            catch
+            {
+                failed++;
+            }
         }
 
-        return $"Applied: {Parts(("note", notes), ("checklist", checklists), ("task", tasks), ("tag", tags), ("reminder", reminders), ("event", events))}.";
+        var summary = $"Applied: {Parts(("note", notes), ("checklist", checklists), ("task", tasks), ("tag", tags), ("reminder", reminders), ("event", events))}.";
+        return failed == 0 ? summary : $"{summary} ({failed} action{(failed == 1 ? "" : "s")} failed)";
     }
 
     // A reminder: schedule the nudge AND drop it on the calendar (no extra alert there) so it shows in both.
