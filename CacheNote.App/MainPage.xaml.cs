@@ -54,6 +54,8 @@ public sealed partial class MainPage : Page
     // master-detail and the editor toolbar collapses into the "Tools" dropdown.
     private bool _compact;
     private bool _compactDetail;
+    // LoadList / ApplyFilter re-select a row programmatically — must not jump to the editor pane.
+    private bool _suppressListNavigate;
 
     public MainPage()
     {
@@ -91,8 +93,11 @@ public sealed partial class MainPage : Page
         {
             BuildSwatches();
             ApplyEditorFontSize();
-            Vm.LoadList();
-            RefreshTagFilter();
+            ReloadListWithoutNavigate(() =>
+            {
+                Vm.LoadList();
+                RefreshTagFilter();
+            });
             if (_newOnLoad)
             {
                 _newOnLoad = false;
@@ -614,25 +619,77 @@ public sealed partial class MainPage : Page
     public void ReloadAfterAi()
     {
         SaveNow();   // reload re-selects a note — flush pending edits first
-        Vm.LoadList();
-        RefreshTagFilter();
+        ReloadListWithoutNavigate(() =>
+        {
+            Vm.LoadList();
+            RefreshTagFilter();
+        });
     }
 
     /// <summary>Flush the debounced autosave immediately (called on real app exit / update install).</summary>
     public void FlushPendingSave() => SaveNow();
 
     // ----- list management -----
+    private void ReloadListWithoutNavigate(Action reload)
+    {
+        _suppressListNavigate = true;
+        try { reload(); }
+        finally { _suppressListNavigate = false; }
+    }
+
     private void NotesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (NotesList.SelectedItem is not NoteListItemViewModel item || item.Id == Vm.CurrentNoteId)
+        if (_suppressListNavigate)
             return;
-        SaveNow();
-        Vm.Select(item);
-        if (_compact)
+        if (NotesList.SelectedItem is not NoteListItemViewModel item)
+            return;
+
+        if (item.Id != Vm.CurrentNoteId)
         {
-            _compactDetail = true;   // tapping a note opens it full-width
-            ApplyCompactPane();
+            SaveNow();
+            Vm.Select(item);
         }
+
+        OpenCompactDetail();
+    }
+
+    /// <summary>
+    /// Compact master-detail: a tap on an already-selected row does not raise SelectionChanged,
+    /// so we also handle Tapped on the item template (single-note lists hit this every time).
+    /// </summary>
+    private void NoteItem_Tapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (ItemOf(sender) is not { } item)
+            return;
+        if (IsFromChildButton(e.OriginalSource as DependencyObject))
+            return;
+
+        SaveNow();
+        if (item.Id != Vm.CurrentNoteId)
+            Vm.Select(item);
+        else
+            NotesList.SelectedItem = item;
+
+        OpenCompactDetail();
+    }
+
+    private void OpenCompactDetail()
+    {
+        if (!_compact || _compactDetail)
+            return;
+        _compactDetail = true;
+        ApplyCompactPane();
+    }
+
+    private static bool IsFromChildButton(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is Button)
+                return true;
+            source = VisualTreeHelper.GetParent(source);
+        }
+        return false;
     }
 
     private void New_Click(object sender, RoutedEventArgs e) => CreateNewNote();
@@ -1192,14 +1249,14 @@ public sealed partial class MainPage : Page
         var q = sender.Text?.Trim() ?? "";
         if (q.Length == 0)
         {
-            Vm.LoadList();
+            ReloadListWithoutNavigate(Vm.LoadList);
             return;
         }
         // Searching overrides any active tag filter.
         _syncing = true;
         TagFilter.SelectedIndex = 0;
         _syncing = false;
-        Vm.ApplyFilter(q, null);
+        ReloadListWithoutNavigate(() => Vm.ApplyFilter(q, null));
     }
 
     private void TagFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1211,12 +1268,12 @@ public sealed partial class MainPage : Page
             SaveNow();   // same as search: the filter switches notes — don't drop pending edits
             if (id == 0)
             {
-                Vm.ApplyFilter(null, null);
+                ReloadListWithoutNavigate(() => Vm.ApplyFilter(null, null));
             }
             else
             {
                 SearchBox.Text = "";
-                Vm.ApplyFilter(null, id);
+                ReloadListWithoutNavigate(() => Vm.ApplyFilter(null, id));
             }
         }
     }

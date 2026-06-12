@@ -62,6 +62,16 @@ public sealed class V2_ResponsiveSmoke
             Assert.NotNull(list);
             TestApp.Screenshot(w, "v2-03-notes-list-narrow.png");
 
+            // Fresh DB has one pre-selected note — tapping it must open detail (regression: single-row list).
+            var loneRow = WaitFor(() => w.FindFirstDescendant(c => c.ByName("Untitled")));
+            Assert.NotNull(loneRow);
+            loneRow!.Click();
+            Thread.Sleep(500);
+            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("BackToList"))));
+            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("EditorTitle"))));
+            TestApp.Screenshot(w, "v2-03b-single-note-opens.png");
+            WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("BackToList")))!.AsButton().Invoke();
+
             // Create a note so there's something to open even on a clean DB.
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("NewNoteButton")))!.AsButton().Invoke();
             Thread.Sleep(500);

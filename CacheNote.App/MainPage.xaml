@@ -338,7 +338,7 @@
                     </ListView.ItemContainerStyle>
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="vm:NoteListItemViewModel">
-                            <Grid PointerEntered="Item_PointerEntered" PointerExited="Item_PointerExited">
+                            <Grid PointerEntered="Item_PointerEntered" PointerExited="Item_PointerExited" Tapped="NoteItem_Tapped">
                                 <!-- selection layer (rounded) -->
                                 <Border CornerRadius="12" Background="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource SelBrush}}" />
                                 <!-- hover layer (rounded) -->
