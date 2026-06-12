@@ -66,11 +66,7 @@ public sealed class M1_EditorSmoke
             var after = window.FindFirstDescendant(cf => cf.ByAutomationId("NotesList"))!.FindAllChildren().Length;
             Assert.True(after < before, $"Delete should reduce note count (before={before}, after={after}).");
 
-            // Theme toggle flips without crashing.
-            var themeToggle = window.FindFirstDescendant(cf => cf.ByAutomationId("ThemeToggle"))?.AsButton();
-            Assert.NotNull(themeToggle);
-            themeToggle!.Invoke();
-            System.Threading.Thread.Sleep(400);
+            // (Theme toggle removed — the app is dark-mode only.)
             TestApp.Screenshot(window, "m1b-notes-toggled.png");
 
             // Back to home.

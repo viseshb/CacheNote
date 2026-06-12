@@ -13,8 +13,9 @@ using CacheNote_App.Services;
 namespace CacheNote_App;
 
 /// <summary>
-/// Settings: appearance (theme, editor font size), behavior (startup, always-on-top, pause),
-/// window modes (compact / dock), cloud key status (.env-backed, masked), and storage info.
+/// Settings: appearance (editor font size; the app is dark-mode only), behavior (startup,
+/// always-on-top, pause), window modes (compact / dock), cloud key status (.env-backed,
+/// masked), and storage info.
 /// </summary>
 public sealed partial class SettingsPage : Page
 {
@@ -35,14 +36,14 @@ public sealed partial class SettingsPage : Page
     {
         _loading = true;
 
-        // Theme
-        var theme = _settings.Get("theme", nameof(ElementTheme.Default));
-        ThemeCombo.SelectedIndex = theme switch
-        {
-            nameof(ElementTheme.Light) => 1,
-            nameof(ElementTheme.Dark) => 2,
-            _ => 0,
-        };
+        // Theme picker PARKED (owner 2026-06-11: dark mode only). Uncomment to bring back light mode.
+        // var theme = _settings.Get("theme", nameof(ElementTheme.Default));
+        // ThemeCombo.SelectedIndex = theme switch
+        // {
+        //     nameof(ElementTheme.Light) => 1,
+        //     nameof(ElementTheme.Dark) => 2,
+        //     _ => 0,
+        // };
 
         // Editor font size
         FontSizeCombo.Items.Clear();
@@ -74,18 +75,19 @@ public sealed partial class SettingsPage : Page
         _loading = false;
     }
 
-    private void Theme_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (_loading)
-            return;
-        var theme = ThemeCombo.SelectedIndex switch
-        {
-            1 => ElementTheme.Light,
-            2 => ElementTheme.Dark,
-            _ => ElementTheme.Default,
-        };
-        App.MainShell?.SetTheme(theme);
-    }
+    // Theme picker PARKED (owner 2026-06-11: dark mode only). Uncomment to bring back light mode.
+    // private void Theme_Changed(object sender, SelectionChangedEventArgs e)
+    // {
+    //     if (_loading)
+    //         return;
+    //     var theme = ThemeCombo.SelectedIndex switch
+    //     {
+    //         1 => ElementTheme.Light,
+    //         2 => ElementTheme.Dark,
+    //         _ => ElementTheme.Default,
+    //     };
+    //     App.MainShell?.SetTheme(theme);
+    // }
 
     private void SttProvider_Changed(object sender, SelectionChangedEventArgs e)
     {

@@ -226,6 +226,7 @@
                     ToolTipService.ToolTip="Check for updates">
                     <FontIcon FontSize="15" Glyph="&#xE896;" />
                 </Button>
+                <!-- Theme toggle PARKED (owner 2026-06-11: dark mode only). Uncomment to bring back light mode.
                 <Button
                     x:Name="ThemeToggleButton"
                     AutomationProperties.AutomationId="ThemeToggle"
@@ -235,6 +236,7 @@
                     ToolTipService.ToolTip="Toggle light / dark theme">
                     <FontIcon x:Name="ThemeIcon" FontSize="16" Glyph="&#xE706;" />
                 </Button>
+                -->
                 <Button
                     x:Name="SettingsButton"
                     AutomationProperties.AutomationId="SettingsGear"

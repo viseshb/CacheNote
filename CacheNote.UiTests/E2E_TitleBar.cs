@@ -33,7 +33,7 @@ public sealed class E2E_TitleBar
 
             // Gear → Settings.
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("SettingsGear"))?.AsButton()).Invoke();
-            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("ThemeSetting"))));
+            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("FontSizeSetting"))));
             TestApp.Screenshot(w, "e2e-titlebar-gear-settings.png");
         }
         finally

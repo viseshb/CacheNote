@@ -364,11 +364,13 @@
                                             Foreground="{ThemeResource AppTextSecondaryBrush}"
                                             Glyph="&#xE718;"
                                             Visibility="{x:Bind Pinned, Mode=OneWay, Converter={StaticResource BoolToVis}}" />
+                                        <!-- List rows always use the theme's default text color — the note's
+                                             custom title color shows only in the editor pane (owner request). -->
                                         <TextBlock
                                             Grid.Column="1"
                                             FontSize="14"
                                             FontWeight="SemiBold"
-                                            Foreground="{x:Bind TitleColorHex, Mode=OneWay, Converter={StaticResource HexToBrush}}"
+                                            Foreground="{ThemeResource AppTextPrimaryBrush}"
                                             Text="{x:Bind DisplayTitle, Mode=OneWay}"
                                             TextTrimming="CharacterEllipsis"
                                             TextWrapping="NoWrap" />
@@ -641,7 +643,7 @@
                             <FontIcon FontSize="15" Glyph="&#xE8FD;" />
                         </ToggleButton>
                         <ToggleButton x:Name="NumberToggle" AutomationProperties.AutomationId="NumberButton" Click="Numbered_Click" Content="1." FontWeight="SemiBold" Style="{StaticResource ToolToggle}" ToolTipService.ToolTip="Numbered list" />
-                        <Button AutomationProperties.AutomationId="AddChecklistTool" Command="{x:Bind Vm.AddChecklistItemCommand}" Style="{StaticResource ToolButton}" ToolTipService.ToolTip="Add checklist item">
+                        <Button x:Name="CircleButton" AutomationProperties.AutomationId="AddChecklistTool" Click="CircleList_Click" Style="{StaticResource ToolButton}" ToolTipService.ToolTip="Circle list (starts at the caret)">
                             <Ellipse Width="15" Height="15" Stroke="{ThemeResource AppTextPrimaryBrush}" StrokeThickness="1.5" />
                         </Button>
                         <Button AutomationProperties.AutomationId="AddMarkdownTool" Click="InsertCodeBlock_Click" Style="{StaticResource ToolButton}" ToolTipService.ToolTip="Insert a code block at the caret">
@@ -680,7 +682,6 @@
                         Drop="Editor_Drop"
                         Background="{ThemeResource AppSurfaceBrush}">
                         <StackPanel>
-                        <Grid>
                         <RichEditBox
                             x:Name="EditorBox"
                             Padding="8,6"
@@ -698,6 +699,7 @@
                             IsSpellCheckEnabled="True"
                             LostFocus="Editor_LostFocus"
                             PlaceholderText="Start writing…"
+                            PreviewKeyDown="Editor_PreviewKeyDown"
                             SelectionChanged="Editor_SelectionChanged"
                             TextChanged="OnContentChanged">
                             <RichEditBox.Resources>
@@ -715,10 +717,6 @@
                                 <SolidColorBrush x:Key="TextControlForegroundFocused" Color="{ThemeResource AppTextPrimaryColor}" />
                             </RichEditBox.Resources>
                         </RichEditBox>
-                            <!-- Live color-preview overlay: a copy of the selected text drawn on top,
-                                 recolored live while the picker drags (RichEdit can't repaint mid-drag). -->
-                            <Canvas x:Name="ColorOverlay" IsHitTestVisible="False" />
-                        </Grid>
 
                             <!-- Markdown composer ({} tool): type md here, Preview renders it into the
                                  note at the caret and closes the box. No formatting toolbar — md only. -->

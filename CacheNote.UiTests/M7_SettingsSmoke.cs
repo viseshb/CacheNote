@@ -27,12 +27,7 @@ public sealed class M7_SettingsSmoke
             Assert.NotNull(w.FindFirstDescendant(c => c.ByAutomationId("PauseToggle")));
             TestApp.Screenshot(w, "m7-settings.png");
 
-            // Theme selector cycles without crashing (Dark → back to system).
-            var theme = w.FindFirstDescendant(c => c.ByAutomationId("ThemeSetting"))!.AsComboBox();
-            theme.Select(2);
-            Thread.Sleep(300);
-            theme.Select(0);
-            Thread.Sleep(200);
+            // (Theme selector removed — the app is dark-mode only.)
 
             // Window-mode buttons act + restore.
             w.FindFirstDescendant(c => c.ByAutomationId("CompactButton"))!.AsButton().Invoke();

@@ -26,17 +26,18 @@ using Windows.Graphics;
 namespace CacheNote_App;
 
 /// <summary>
-/// The application window: custom title bar (Mica), a theme toggle in the title-bar
-/// footer, and the content Frame. Window-state persistence lands in M1b.
+/// The application window: custom title bar (Mica) and the content Frame.
+/// CacheNote is dark-mode only (owner decision 2026-06-11) — no theme toggle.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
-    private const string ThemeKey = "theme";
     private const string SkippedUpdateKey = "update_skipped_version";
 
+    // Theme toggle PARKED (owner 2026-06-11: dark mode only). Uncomment to bring back light mode.
+    // private const string ThemeKey = "theme";
     // Segoe Fluent glyphs (built from code points so the source stays plain ASCII).
-    private static readonly string SunGlyph = ((char)0xE706).ToString();   // shown in dark mode → click for light
-    private static readonly string MoonGlyph = ((char)0xE708).ToString();  // shown in light mode → click for dark
+    // private static readonly string SunGlyph = ((char)0xE706).ToString();   // shown in dark mode → click for light
+    // private static readonly string MoonGlyph = ((char)0xE708).ToString();  // shown in light mode → click for dark
 
     public MainWindow()
     {
@@ -65,6 +66,12 @@ public sealed partial class MainWindow : Window
         // Cloud build/publish (GitHub Actions) + auto-check on launch → offer one-click update.
         RootGrid.Loaded += async (_, _) => await StartupUpdateCheckAsync();
 
+        // Dark before the first page loads, so every control resolves dark-theme resources.
+        // (Dark mode only — owner 2026-06-11. The saved-theme restore is parked below.)
+        ApplyDarkTheme();
+        // var saved = App.GetService<ISettingsService>().Get(ThemeKey, nameof(ElementTheme.Default));
+        // ApplyTheme(Enum.TryParse<ElementTheme>(saved, out var t) ? t : ElementTheme.Default, persist: false);
+
         RootFrame.Navigate(typeof(HomePage));
 
         // When the AI panel finishes closing, fully collapse it (so its controls aren't hit-testable).
@@ -73,10 +80,6 @@ public sealed partial class MainWindow : Window
             if (!_aiOpen)
                 AiPanel.Visibility = Visibility.Collapsed;
         };
-
-        // Restore the saved theme (defaults to following the system).
-        var saved = App.GetService<ISettingsService>().Get(ThemeKey, nameof(ElementTheme.Default));
-        ApplyTheme(Enum.TryParse<ElementTheme>(saved, out var t) ? t : ElementTheme.Default, persist: false);
 
         SetupTrayAndWindowBehavior();
     }
@@ -749,16 +752,17 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void ThemeToggle_Click(object sender, RoutedEventArgs e)
-    {
-        // Treat the current effective theme as the baseline, then flip it.
-        var current = RootGrid.ActualTheme;
-        ApplyTheme(current == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark, persist: true);
-    }
+    // Theme toggle PARKED (owner 2026-06-11: dark mode only). Uncomment to bring back light mode.
+    // private void ThemeToggle_Click(object sender, RoutedEventArgs e)
+    // {
+    //     // Treat the current effective theme as the baseline, then flip it.
+    //     var current = RootGrid.ActualTheme;
+    //     ApplyTheme(current == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark, persist: true);
+    // }
+    //
+    // public void SetTheme(ElementTheme theme) => ApplyTheme(theme, persist: true);
 
     // ----- public hooks for the Settings page (window-level actions) -----
-    public void SetTheme(ElementTheme theme) => ApplyTheme(theme, persist: true);
-
     public void SetAlwaysOnTop(bool on)
     {
         ApplyAlwaysOnTop(on, persist: true);
@@ -803,30 +807,43 @@ public sealed partial class MainWindow : Window
         CenterOnScreen();
     }
 
-    private void ApplyTheme(ElementTheme theme, bool persist)
+    /// <summary>CacheNote is dark-mode only: force the dark theme + matching caption buttons.</summary>
+    private void ApplyDarkTheme()
     {
-        // RichEditBox wipes custom font colors when its themed Foreground changes — let the
-        // Notes page snapshot the RTF first and restore/adapt it after the swap.
-        var notesPage = RootFrame.Content as MainPage;
-        notesPage?.PrepareThemeSwap();
-
-        RootGrid.RequestedTheme = theme;
-
-        var isDark = theme == ElementTheme.Dark ||
-                     (theme == ElementTheme.Default && RootGrid.ActualTheme == ElementTheme.Dark);
-        ThemeIcon.Glyph = isDark ? SunGlyph : MoonGlyph;
+        RootGrid.RequestedTheme = ElementTheme.Dark;
 
         var bar = AppWindow.TitleBar;
         bar.ButtonBackgroundColor = Colors.Transparent;
         bar.ButtonInactiveBackgroundColor = Colors.Transparent;
-        bar.ButtonForegroundColor = isDark ? Colors.White : Colors.Black;
-        bar.ButtonHoverForegroundColor = isDark ? Colors.White : Colors.Black;
-
-        if (persist)
-            App.GetService<ISettingsService>().Set(ThemeKey, theme.ToString());
-
-        notesPage?.FinishThemeSwap();
+        bar.ButtonForegroundColor = Colors.White;
+        bar.ButtonHoverForegroundColor = Colors.White;
     }
+
+    // Full light/dark theme switcher PARKED (owner 2026-06-11: dark mode only).
+    // private void ApplyTheme(ElementTheme theme, bool persist)
+    // {
+    //     // RichEditBox wipes custom font colors when its themed Foreground changes — let the
+    //     // Notes page snapshot the RTF first and restore/adapt it after the swap.
+    //     var notesPage = RootFrame.Content as MainPage;
+    //     notesPage?.PrepareThemeSwap();
+    //
+    //     RootGrid.RequestedTheme = theme;
+    //
+    //     var isDark = theme == ElementTheme.Dark ||
+    //                  (theme == ElementTheme.Default && RootGrid.ActualTheme == ElementTheme.Dark);
+    //     ThemeIcon.Glyph = isDark ? SunGlyph : MoonGlyph;
+    //
+    //     var bar = AppWindow.TitleBar;
+    //     bar.ButtonBackgroundColor = Colors.Transparent;
+    //     bar.ButtonInactiveBackgroundColor = Colors.Transparent;
+    //     bar.ButtonForegroundColor = isDark ? Colors.White : Colors.Black;
+    //     bar.ButtonHoverForegroundColor = isDark ? Colors.White : Colors.Black;
+    //
+    //     if (persist)
+    //         App.GetService<ISettingsService>().Set(ThemeKey, theme.ToString());
+    //
+    //     notesPage?.FinishThemeSwap();
+    // }
 
     private void CenterOnScreen()
     {

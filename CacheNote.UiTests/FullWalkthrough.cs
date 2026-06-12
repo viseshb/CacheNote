@@ -131,16 +131,21 @@ public sealed class FullWalkthrough
                 TestApp.Screenshot(w, "wt-02-editor-formatted.png");
             });
 
-            // ---------- CHECKLIST ----------
-            Step("Checklist add + tick + delete", () =>
+            // ---------- CIRCLE LIST (inline, at the caret) ----------
+            Step("Circle list inserts an item at the caret", () =>
             {
+                var body = w.FindFirstDescendant(c => c.ByAutomationId("EditorBody"))!;
+                body.Click();
+                Pause();
+                // Earlier steps turned the text into a bullet/numbered list, where the circle
+                // tool is intentionally DISABLED. Jump to the guaranteed plain line below it.
+                using (Keyboard.Pressing(VirtualKeyShort.CONTROL))
+                    Keyboard.Type(VirtualKeyShort.END);
+                Pause();
                 w.FindFirstDescendant(c => c.ByAutomationId("AddChecklistTool"))!.AsButton().Invoke();
                 Pause();
-                var check = WaitFor(() => w.FindFirstDescendant(c => c.ByControlType(ControlType.CheckBox)));
-                Assert.NotNull(check);
-                check!.AsCheckBox().IsChecked = true;
+                Keyboard.Type("first item");
                 Pause();
-                Assert.True(check.AsCheckBox().IsChecked);
                 TestApp.Screenshot(w, "wt-03-checklist.png");
             });
 
@@ -167,14 +172,11 @@ public sealed class FullWalkthrough
                 Pause();
             });
 
-            // ---------- THEME TOGGLE ----------
-            Step("Theme toggle switches and captures both themes", () =>
+            // ---------- THEME ----------
+            Step("Dark-mode only: no theme toggle in the title bar", () =>
             {
-                var toggle = w.FindFirstDescendant(c => c.ByAutomationId("ThemeToggle"))!.AsButton();
-                toggle.Invoke(); Pause();
+                Assert.Null(w.FindFirstDescendant(c => c.ByAutomationId("ThemeToggle")));
                 TestApp.Screenshot(w, "wt-05-theme-a.png");
-                toggle.Invoke(); Pause();
-                TestApp.Screenshot(w, "wt-06-theme-b.png");
             });
 
             // ---------- UPDATE BUTTON ----------

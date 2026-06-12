@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -80,7 +80,12 @@ public sealed partial class MainPage : Page
 
         Vm.ContentRequested += OnContentRequested;
         Unloaded += (_, _) => Vm.ContentRequested -= OnContentRequested;
-        ActualThemeChanged += (_, _) => BuildSwatches();
+        ActualThemeChanged += (_, _) =>
+        {
+            BuildSwatches();
+            RefreshEditorThemeBrushes();
+            ApplyTitleColor();
+        };
         SizeChanged += (_, e) => ApplyResponsive(e.NewSize.Width);
         Loaded += (_, _) =>
         {
@@ -456,11 +461,17 @@ public sealed partial class MainPage : Page
         ApplyTitleColor();
     }
 
-    /// <summary>Paint the title box with the note's stored title color (null → inherit theme).</summary>
+    /// <summary>Paint the title box with the note's stored title color (none → inherit theme).</summary>
     private void ApplyTitleColor()
     {
         var hex = Vm.CurrentTitleColorHex;
-        TitleBox.Foreground = string.IsNullOrEmpty(hex) ? null : new SolidColorBrush(ColorFromHex(hex));
+        if (string.IsNullOrEmpty(hex))
+            // ClearValue, NOT `Foreground = null`: a local null overrides the theme-aware
+            // default, freezing the title at whatever color the current theme renders —
+            // after a light/dark switch the title stays black-on-dark / white-on-light.
+            TitleBox.ClearValue(Control.ForegroundProperty);
+        else
+            TitleBox.Foreground = new SolidColorBrush(ColorFromHex(hex));
     }
 
     // ----- attachments (M7) -----
@@ -760,6 +771,14 @@ public sealed partial class MainPage : Page
             BulletToggle.IsChecked = pf.ListType == MarkerType.Bullet;
             NumberToggle.IsChecked = pf.ListType == MarkerType.Arabic;
 
+            // List types are mutually exclusive (owner request): inside a circle list the
+            // bullet/number tools are disabled, and inside a bullet/numbered list the circle
+            // tool is disabled — no silent conversion.
+            var anyCircled = ParagraphStarts(Selection.StartPosition, Selection.EndPosition).Exists(IsCircled);
+            BulletToggle.IsEnabled = !anyCircled;
+            NumberToggle.IsEnabled = !anyCircled;
+            CircleButton.IsEnabled = anyCircled || pf.ListType == MarkerType.None;   // off inside bullet/numbered lists
+
             if (!string.IsNullOrEmpty(cf.Name) && Array.IndexOf(Fonts, cf.Name) >= 0)
                 FontFamilyCombo.SelectedItem = cf.Name;
             if (cf.Size > 0)
@@ -815,24 +834,168 @@ public sealed partial class MainPage : Page
 
     private void Bullets_Click(object sender, RoutedEventArgs e)
     {
-        var pf = Selection.ParagraphFormat;
-        pf.ListType = pf.ListType == MarkerType.Bullet ? MarkerType.None : MarkerType.Bullet;
+        var turningOn = Selection.ParagraphFormat.ListType != MarkerType.Bullet;
+        if (turningOn)
+            StripCircleMarkers(ParagraphStarts(Selection.StartPosition, Selection.EndPosition));
+        // Re-read the format AFTER the strip — deleting markers shifts the selection.
+        Selection.ParagraphFormat.ListType = turningOn ? MarkerType.Bullet : MarkerType.None;
+        if (turningOn)
+            EnsurePlainLineBelowList();
         AfterFormat();
     }
 
     private void Numbered_Click(object sender, RoutedEventArgs e)
     {
-        var pf = Selection.ParagraphFormat;
-        if (pf.ListType == MarkerType.Arabic)
+        var turningOn = Selection.ParagraphFormat.ListType != MarkerType.Arabic;
+        if (turningOn)
         {
-            pf.ListType = MarkerType.None;
+            StripCircleMarkers(ParagraphStarts(Selection.StartPosition, Selection.EndPosition));
+            var pf = Selection.ParagraphFormat;
+            pf.ListStart = 1; // numbering starts at 1, not 0
+            pf.ListType = MarkerType.Arabic;
+            EnsurePlainLineBelowList();
         }
         else
         {
-            pf.ListStart = 1; // numbering starts at 1, not 0
-            pf.ListType = MarkerType.Arabic;
+            Selection.ParagraphFormat.ListType = MarkerType.None;
         }
         AfterFormat();
+    }
+
+    // ----- circle list: "○" items inline in the note, starting AT the caret -----
+    // (The old checklist tool appended checkbox rows in a fixed block BELOW the note text;
+    // existing notes still render those, but the toolbar circle now works like the other
+    // list tools: it marks the paragraph(s) the caret/selection is on.)
+    private const string CircleMarker = "○";       // hollow circle glyph
+    private const string CirclePrefix = "○  ";     // marker + two spaces
+
+    /// <summary>Start offset of every paragraph the [selStart, selEnd] selection touches.</summary>
+    private List<int> ParagraphStarts(int selStart, int selEnd)
+    {
+        var doc = EditorBox.Document;
+        var starts = new List<int>();
+        var probe = doc.GetRange(selStart, selStart);
+        probe.StartOf(TextRangeUnit.Paragraph, false);
+        while (true)
+        {
+            if (starts.Count > 0 && probe.StartPosition <= starts[^1])
+                break;                                        // no forward progress = end of doc
+            starts.Add(probe.StartPosition);
+            if (probe.Move(TextRangeUnit.Paragraph, 1) <= 0 || probe.StartPosition > selEnd)
+                break;
+        }
+        return starts;
+    }
+
+    private bool IsCircled(int paraStart)
+        => (EditorBox.Document.GetRange(paraStart, paraStart + 1).Text ?? "").StartsWith(CircleMarker, StringComparison.Ordinal);
+
+    private int CirclePrefixLen(int paraStart)
+    {
+        var t = EditorBox.Document.GetRange(paraStart, paraStart + CirclePrefix.Length + 1).Text ?? "";
+        var len = 1;
+        while (len < t.Length && t[len] == ' ')
+            len++;
+        return len;
+    }
+
+    /// <summary>Strip "○ " markers from the given paragraphs (list types are mutually exclusive).</summary>
+    private void StripCircleMarkers(List<int> starts)
+    {
+        for (var i = starts.Count - 1; i >= 0; i--)           // back-to-front keeps offsets valid
+            if (IsCircled(starts[i]))
+                EditorBox.Document.GetRange(starts[i], starts[i] + CirclePrefixLen(starts[i])).Text = "";
+    }
+
+    /// <summary>
+    /// A list block must always have a plain line below it (owner request) — otherwise a
+    /// list at the end of the note leaves nowhere to click to continue normal writing.
+    /// Appends an empty non-list paragraph when the selection's paragraph is the last one.
+    /// </summary>
+    private void EnsurePlainLineBelowList()
+    {
+        var doc = EditorBox.Document;
+        var sel = doc.Selection;
+        int selStart = sel.StartPosition, selEnd = sel.EndPosition;
+
+        var para = doc.GetRange(selEnd, selEnd);
+        para.Expand(TextRangeUnit.Paragraph);
+        var docEnd = doc.GetRange(int.MaxValue, int.MaxValue).EndPosition;
+        if (para.EndPosition < docEnd)
+            return;   // something already exists below the list
+
+        var insert = doc.GetRange(docEnd, docEnd);
+        insert.Text = "\r";
+        var fresh = doc.GetRange(insert.EndPosition, insert.EndPosition);
+        fresh.ParagraphFormat.ListType = MarkerType.None;   // the new line must not inherit the list
+        sel.SetRange(selStart, selEnd);                     // keep the caret where the user is typing
+    }
+
+    private void CircleList_Click(object sender, RoutedEventArgs e)
+    {
+        var doc = EditorBox.Document;
+        var sel = doc.Selection;
+        int selStart = sel.StartPosition, selEnd = sel.EndPosition;
+        var starts = ParagraphStarts(selStart, selEnd);
+
+        var removeAll = starts.TrueForAll(IsCircled);
+        if (!removeAll)
+        {
+            // Circle list is exclusive with bullets/numbering — clear those off the lines first.
+            var para = doc.GetRange(selStart, selEnd);
+            para.Expand(TextRangeUnit.Paragraph);
+            para.ParagraphFormat.ListType = MarkerType.None;
+        }
+        for (var i = starts.Count - 1; i >= 0; i--)           // back-to-front keeps offsets valid
+        {
+            var s = starts[i];
+            if (removeAll)
+                doc.GetRange(s, s + CirclePrefixLen(s)).Text = "";
+            else if (!IsCircled(s))
+                doc.GetRange(s, s).Text = CirclePrefix;
+        }
+
+        // Keep the caret on the first touched line, shifted past an inserted marker.
+        var caret = removeAll
+            ? Math.Max(starts[0], selStart - CirclePrefix.Length)
+            : selStart + (IsCircled(starts[0]) && selStart - starts[0] < CirclePrefix.Length ? CirclePrefix.Length : 0);
+        sel.SetRange(caret, caret);
+        if (!removeAll)
+            EnsurePlainLineBelowList();
+        AfterFormat();
+    }
+
+    /// <summary>Enter inside a "○ " line continues the circle list; Enter on an empty item ends it.</summary>
+    private void Editor_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.Enter)
+            return;
+        var doc = EditorBox.Document;
+        var sel = doc.Selection;
+        if (sel.StartPosition != sel.EndPosition)
+            return;                                           // replacing a selection: default behavior
+
+        var line = doc.GetRange(sel.StartPosition, sel.StartPosition);
+        line.Expand(TextRangeUnit.Paragraph);
+        var text = (line.Text ?? "").TrimEnd('\r', '\n');
+        if (!text.StartsWith(CircleMarker, StringComparison.Ordinal))
+            return;
+
+        e.Handled = true;
+        if (text.Trim() == CircleMarker)
+        {
+            // Empty item: end the list — strip the marker, leave a plain line.
+            var len = 1;
+            while (len < text.Length && text[len] == ' ')
+                len++;
+            doc.GetRange(line.StartPosition, line.StartPosition + len).Text = "";
+        }
+        else
+        {
+            sel.TypeText("\r" + CirclePrefix);
+            EnsurePlainLineBelowList();   // growing the list keeps a plain line under it
+        }
+        OnContentChanged(this, null!);
     }
 
     private void FontFamily_Changed(object sender, SelectionChangedEventArgs e)
@@ -871,12 +1034,23 @@ public sealed partial class MainPage : Page
     private readonly SolidColorBrush _selVisibleBrush = new(Color.FromArgb(255, 0x25, 0x63, 0xEB));
     private Color? _pendingColor;
     private Color? _latestColor;
-    private TextBlock? _colorOverlay;   // live-recolor copy drawn over the selection while picking
 
     private bool _colorTargetTitle;   // color tool aimed at the note TITLE (TextBox), not the body
 
+    // Color-flyout event trace for the UI tests (only active when the harness sets
+    // CacheNote_DATA_DIR): popup open/close ordering is flaky under automation, and the
+    // tests use this log both to verify commits and to detect when the flyout really closed.
+    private static void ColorDiag(string m)
+    {
+        var dir = Environment.GetEnvironmentVariable("CacheNote_DATA_DIR");
+        if (string.IsNullOrEmpty(dir))
+            return;
+        try { File.AppendAllText(Path.Combine(dir, "color-diag.log"), $"{DateTime.Now:HH:mm:ss.fff} {m}\n"); } catch { }
+    }
+
     private void ColorFlyout_Opening(object sender, object e)
     {
+        ColorDiag($"OPENING title={TitleBox.FocusState != FocusState.Unfocused}");
         // The tool colors whichever text the user was in: the title box (focused when the
         // flyout opened — the color button doesn't steal focus) or the editor selection.
         _colorTargetTitle = TitleBox.FocusState != FocusState.Unfocused;
@@ -890,85 +1064,10 @@ public sealed partial class MainPage : Page
         _pendingColor = null;
         _latestColor = null;
 
-        // PARKED: live-during-drag overlay (BuildColorOverlay) is disabled for now — alignment
-        // unfinished. Color works via swatches (instant) + apply-on-release. Keep the selection
-        // visible (blue) while picking so the user sees what they're recoloring.
+        // Keep the selection visible (blue) while picking so the user sees what they're recoloring.
         EditorBox.SelectionHighlightColor = _selVisibleBrush;
         EditorBox.SelectionHighlightColorWhenNotFocused = _selVisibleBrush;
     }
-
-    // Draw a TextBlock copy of the selected text exactly over the selection. Composition renders
-    // it every frame, so recoloring it on ColorChanged updates LIVE during the drag — which the
-    // RichEdit text engine refuses to do while the picker holds the pointer. Single line only:
-    // a multi-line selection's GetRect is one bounding box (line breaks unknown) → skip overlay,
-    // the color still lands on release.
-    private void BuildColorOverlay()
-    {
-        ColorOverlay.Children.Clear();
-        _colorOverlay = null;
-
-        var sel = EditorBox.Document.Selection;
-        var text = sel.Text ?? string.Empty;
-        Diag($"BUILD text='{text.Replace("\r", "\\r")}' len={text.Length}");
-        if (string.IsNullOrEmpty(text) || text.Contains('\r') || text.Contains('\n'))
-        {
-            Diag("SKIP empty-or-multiline");
-            return; // nothing selected, or multi-line → no overlay
-        }
-
-        sel.GetRect(PointOptions.ClientCoordinates, out Windows.Foundation.Rect r, out _);
-        Diag($"RAW rect X={r.X} Y={r.Y} W={r.Width} H={r.Height}");
-        if (r.Width <= 0 || r.Height <= 0)
-        {
-            Diag("SKIP zero-rect");
-            return;
-        }
-
-        // GetRect is in device pixels; the Canvas is in DIPs → divide by the display scale.
-        double scale = EditorBox.XamlRoot?.RasterizationScale ?? 1.0;
-        double rx = r.X / scale, ry = r.Y / scale, rw = r.Width / scale, rh = r.Height / scale;
-        Diag($"SCALE={scale} -> x={rx:F1} y={ry:F1} w={rw:F1} h={rh:F1}");
-
-        var fmt = sel.CharacterFormat;
-        // Derive font size from the measured line height — unit-agnostic, so it matches the real
-        // glyphs regardless of point/DIP conversions. Segoe UI line height ≈ 1.33 × font size.
-        double size = rh > 0 ? rh / 1.33 : 16;
-        var family = string.IsNullOrEmpty(fmt.Name)
-            ? (FontFamilyCombo.SelectedItem as string ?? "Segoe UI")
-            : fmt.Name;
-
-        var tb = new TextBlock
-        {
-            Text = text,
-            FontSize = size,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontFamily = new FontFamily(family),
-            Foreground = new SolidColorBrush(ThemedTextColor()),
-            TextWrapping = TextWrapping.NoWrap,
-            TextLineBounds = TextLineBounds.Full,
-        };
-        if (fmt.Bold == FormatEffect.On) tb.FontWeight = FontWeights.Bold;
-        if (fmt.Italic == FormatEffect.On) tb.FontStyle = Windows.UI.Text.FontStyle.Italic;
-
-        // TextBlock has no Background in WinUI; a Border supplies the opaque surface fill that
-        // hides the original (old-color) text underneath.
-        var cover = new Border
-        {
-            Background = EditorBox.Background,
-            Width = rw,
-            Height = rh,
-            Child = tb,
-            IsHitTestVisible = false,
-        };
-        Canvas.SetLeft(cover, rx);
-        Canvas.SetTop(cover, ry);
-        ColorOverlay.Children.Add(cover);
-        _colorOverlay = tb;
-        Diag($"ADDED overlay size={size:F1} family={family} canvasChildren={ColorOverlay.Children.Count} canvasW={ColorOverlay.ActualWidth} canvasH={ColorOverlay.ActualHeight}");
-    }
-
-    // Color-overlay diagnostics — disabled (parked feature; no hardcoded path so the repo folder is movable).
-    private static void Diag(string m, bool reset = false) { }
 
     // Live recolor: applies to the captured range without stealing focus (so the picker
     // stays interactive and the drag is smooth), and drops the blue highlight so the real
@@ -1020,19 +1119,28 @@ public sealed partial class MainPage : Page
     {
         if (_syncing)
             return;
+        // Do NOT touch the RichEdit document while the picker holds pointer capture — any
+        // mutation mid-drag leaves the editor's text surface blank until the next pointer
+        // event (ApplyDisplayUpdates can't flush it; an unbalanced one even freezes painting
+        // for good). Track the color live on the toolbar swatch bar; the text itself is
+        // recolored on release/close. The title is a plain TextBox, so IT can recolor live.
         _latestColor = args.NewColor;
-        // LIVE recolor of the real text while the user drags the picker. The RichEdit engine
-        // defers repainting while the picker holds pointer capture — ApplyDisplayUpdates()
-        // forces the repaint so the color tracks in realtime instead of landing on release.
-        LiveApply(args.NewColor);
-        EditorBox.Document.ApplyDisplayUpdates();
+        ColorDiag($"COLORCHANGED {args.NewColor} title={_colorTargetTitle}");
+        ColorBar.Fill = new SolidColorBrush(args.NewColor);
+        if (_colorTargetTitle)
+        {
+            TitleBox.Foreground = new SolidColorBrush(args.NewColor);
+            _pendingColor = args.NewColor;
+        }
     }
 
     private void Color_Click(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is Border border && border.Tag is string hex)
         {
-            LiveApply(hex == "auto" ? ThemedTextColor() : ColorFromHex(hex));
+            var color = hex == "auto" ? ThemedTextColor() : ColorFromHex(hex);
+            LiveApply(color);
+            _latestColor = color;   // the swatch wins over any earlier spectrum drag at commit time
             (ColorButton.Flyout as Flyout)?.Hide();   // swatch = instant pick → close + finalize
         }
     }
@@ -1251,6 +1359,7 @@ public sealed partial class MainPage : Page
 
     private void ColorFlyout_Closed(object sender, object e)
     {
+        ColorDiag($"CLOSED title={_colorTargetTitle} latest={_latestColor?.ToString() ?? "null"} pending={_pendingColor?.ToString() ?? "null"} sel={_selStart}..{_selEnd}");
         // Title target: persist the color per note + reflect in the list. Pure black/white
         // is stored as "theme default" so it flips correctly on light/dark switch; any other
         // color sticks across themes.
@@ -1273,29 +1382,34 @@ public sealed partial class MainPage : Page
             return;
         }
 
-        // Commit the picked color to the REAL text range once (the overlay was just a preview),
-        // tear down the overlay, restore the normal highlight, and persist.
-        if (_latestColor is Color last)
-        {
-            var range = EditorBox.Document.Selection;
-            range.SetRange(_selStart, _selEnd);
-            range.CharacterFormat.ForegroundColor = last;
-            RecolorListMarkers(last);
-            _pendingColor = last;
-        }
-        ColorOverlay.Children.Clear();
-        _colorOverlay = null;
-
         EditorBox.SelectionHighlightColor = _selVisibleBrush;
         EditorBox.SelectionHighlightColorWhenNotFocused = _selVisibleBrush;
         EditorBox.Focus(FocusState.Programmatic);
-        var sel = EditorBox.Document.Selection;
-        // Collapse to the end so the freshly-colored text is VISIBLE (not hidden under the
-        // selection highlight), and so a set-then-type caret keeps the picked color.
-        sel.SetRange(_selEnd, _selEnd);
-        if (_pendingColor is Color c)
-            sel.CharacterFormat.ForegroundColor = c;
-        OnContentChanged(this, null!);
+
+        // Commit AFTER the popup finishes tearing down: CharacterFormat writes issued while
+        // the flyout is mid-light-dismiss are silently dropped by RichEdit, so an immediate
+        // commit loses the picked color. One dispatcher hop later they land reliably.
+        var caretColor = _latestColor ?? _pendingColor;
+        int start = _selStart, end = _selEnd;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            var sel = EditorBox.Document.Selection;
+            if (_latestColor is Color last)
+            {
+                sel.SetRange(start, end);
+                sel.CharacterFormat.ForegroundColor = last;
+                RecolorListMarkers(last);
+                _pendingColor = last;
+            }
+            // Collapse to the end so the freshly-colored text is VISIBLE (not hidden under
+            // the selection highlight), and so a set-then-type caret keeps the picked color.
+            sel.SetRange(end, end);
+            if (caretColor is Color c)
+                sel.CharacterFormat.ForegroundColor = c;
+            var probe = EditorBox.Document.GetRange(start, Math.Max(start + 1, Math.Min(end, start + 1)));
+            ColorDiag($"COMMITTED picked={caretColor?.ToString() ?? "null"} readback={probe.CharacterFormat.ForegroundColor}");
+            OnContentChanged(this, null!);
+        });
     }
 
     // ----- theme swap: keep custom font colors across light/dark -----
@@ -1365,6 +1479,24 @@ public sealed partial class MainPage : Page
         => (c.R == oldDefault.R && c.G == oldDefault.G && c.B == oldDefault.B)
            || (c.R == 0x00 && c.G == 0x00 && c.B == 0x00)     // pure black follows the theme
            || (c.R == 0xFF && c.G == 0xFF && c.B == 0xFF);    // pure white follows the theme
+
+    /// <summary>
+    /// The TextControl* brushes in EditorBox.Resources resolve their {ThemeResource} colors
+    /// once at load; an in-session light/dark switch leaves them stale (white editor surface
+    /// in dark mode). Re-paint them from the active theme's tokens (ThemeResources.xaml).
+    /// </summary>
+    private void RefreshEditorThemeBrushes()
+    {
+        var dark = ActualTheme == ElementTheme.Dark;
+        var surface = dark ? Color.FromArgb(255, 0x1E, 0x1E, 0x1E) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF);
+        var text = dark ? Color.FromArgb(255, 0xF5, 0xF5, 0xF5) : Color.FromArgb(255, 0x18, 0x18, 0x1B);
+        foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" })
+            if (EditorBox.Resources[key] is SolidColorBrush b)
+                b.Color = surface;
+        foreach (var key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" })
+            if (EditorBox.Resources[key] is SolidColorBrush b)
+                b.Color = text;
+    }
 
     // ----- helpers -----
     private Color ThemedTextColor() =>

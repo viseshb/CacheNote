@@ -75,7 +75,7 @@ public sealed class E2E_FullSweep
         {
             var w = TestApp.WaitForMainWindow(app, automation);
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("settings"))).AsButton().Invoke();
-            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("ThemeSetting"))));
+            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("FontSizeSetting"))));
 
             // Flip each toggle on then off (no crash, state changes persist to the isolated DB).
             foreach (var id in new[] { "StartupToggle", "AlwaysOnTopToggle", "PauseToggle" })
@@ -86,11 +86,7 @@ public sealed class E2E_FullSweep
                 Assert.False(app.HasExited, $"app exited toggling {id}");
             }
 
-            // Theme + font-size dropdowns.
-            WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("ThemeSetting"))).AsComboBox().Select("Dark");
-            Thread.Sleep(300);
-            WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("ThemeSetting"))).AsComboBox().Select("Light");
-            Thread.Sleep(300);
+            // (Theme dropdown removed — dark-mode only.)
             TestApp.Screenshot(w, "sweep-settings.png");
 
             // Window modes: compact, dock left, dock right, restore.

@@ -51,7 +51,7 @@ public sealed class V2_ResponsiveSmoke
 
             // --- Settings: rows must reflow (label left, control right), no overlap ---
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("settings")))!.AsButton().Invoke();
-            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("ThemeSetting"))));
+            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("FontSizeSetting"))));
             Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("TestAiButton"))));
             TestApp.Screenshot(w, "v2-02-settings-narrow.png");
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("BackToHome")))!.AsButton().Invoke();
@@ -95,7 +95,7 @@ public sealed class V2_ResponsiveSmoke
             TestApp.Screenshot(w, "v2-08-tasks-wide.png");
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("BackToHome")))!.AsButton().Invoke();
             WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("settings")))!.AsButton().Invoke();
-            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("ThemeSetting"))));
+            Assert.NotNull(WaitFor(() => w.FindFirstDescendant(c => c.ByAutomationId("FontSizeSetting"))));
             TestApp.Screenshot(w, "v2-09-settings-wide.png");
         }
         finally
