@@ -1,4 +1,6 @@
 using CacheNote.Core.Ai;
+using CacheNote.Core.Cloud;
+using CacheNote.Core.Infrastructure;
 
 namespace CacheNote.Tests;
 
@@ -78,5 +80,26 @@ public sealed class CachingGeminiClientTests
             Calls++;
             return Task.FromResult("   ");
         }
+    }
+
+    // Proves caching through the EXACT production wiring: GeminiClientFactory wraps each Create()
+    // in a CachingGeminiClient sharing one cache, so a repeated read-only prompt across separate
+    // Create() calls hits the inner client only once.
+    [Fact]
+    public async Task Factory_SharesCacheAcrossCreateCalls()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "CacheNote-tests", Guid.NewGuid().ToString("N"));
+        var cfg = new CloudConfig(new AppPaths(root));
+        var inner = new CountingClient();
+        var factory = new GeminiClientFactory(cfg, _ => inner, new LlmResponseCache());
+
+        var r1 = await factory.Create().CompleteAsync("sys", "same prompt", jsonSchema: null);
+        var r2 = await factory.Create().CompleteAsync("sys", "same prompt", jsonSchema: null);
+        var r3 = await factory.Create().CompleteAsync("sys", "different prompt", jsonSchema: null);
+
+        Assert.Equal("result-1", r1);
+        Assert.Equal("result-1", r2);   // cached across a fresh Create()
+        Assert.Equal("result-2", r3);   // new prompt → new call
+        Assert.Equal(2, inner.Calls);
     }
 }
