@@ -40,6 +40,11 @@ public sealed class AiAction
     public string? MeetingUrl { get; set; }
     public int? AlertMinutes { get; set; }   // event alert: minutes before start (fires a reminder/toast)
 
+    /// <summary>True when applying this action would archive or delete the open note — irreversible
+    /// enough to warrant a confirmation step before it runs.</summary>
+    public bool IsDestructive =>
+        Action == AiActionKinds.SetCurrentNoteState && (Archived == true || Deleted == true);
+
     /// <summary>A human-readable one-line description for the preview.</summary>
     public string Describe() => Action switch
     {

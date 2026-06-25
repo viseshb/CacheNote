@@ -37,9 +37,14 @@ public sealed class AiActionExecutor
         _reminders = reminders;
     }
 
+    /// <summary>Id of the note created by the most recent <see cref="Apply"/> call, or null if none was
+    /// created. Lets the caller open the exact new note rather than re-querying by (possibly duplicate) title.</summary>
+    public long? LastCreatedNoteId { get; private set; }
+
     /// <summary>Returns a short summary of what was applied (starts with "Applied").</summary>
     public string Apply(IReadOnlyList<AiAction> actions, long? currentNoteId)
     {
+        LastCreatedNoteId = null;
         long lastNoteId = currentNoteId ?? 0;
         int notes = 0, noteUpdates = 0, checklists = 0, tasks = 0, tags = 0, reminders = 0, events = 0, failed = 0;
 
@@ -65,6 +70,7 @@ public sealed class AiActionExecutor
                         _notes.SetPinned(lastNoteId, true);
                     if (IsHexColor(a.TitleColorHex))
                         _notes.SetTitleColor(lastNoteId, a.TitleColorHex);
+                    LastCreatedNoteId = lastNoteId;
                     notes++;
                     break;
 

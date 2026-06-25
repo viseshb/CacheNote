@@ -546,7 +546,7 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            var plan = await svc.PlanAsync(string.Join("\n", _aiHistory), BuildAiContext());
+            var plan = await svc.PlanAsync(string.Join("\n", _aiHistory), await BuildAiContextAsync());
             AiConversation.Children.Remove(thinking);
             if (!string.IsNullOrWhiteSpace(plan.Reply))
             {
@@ -556,22 +556,11 @@ public sealed partial class MainWindow : Window
 
             if (plan.Actions.Count > 0)
             {
-                // Act by default — apply immediately, then show what was created.
-                var currentSection = CurrentSectionName();
-                long? noteId = (RootFrame.Content as MainPage)?.CurrentNoteIdOrNull;
-                var summary = svc.Apply(plan.Actions, noteId);
-                AiConversation.Children.Add(new TextBlock
-                {
-                    Text = "✓ " + summary,
-                    FontSize = 12,
-                    TextWrapping = TextWrapping.Wrap,
-                    Margin = new Thickness(8, 0, 0, 2),
-                    Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"],
-                });
-                AiStatus.Text = summary;             // starts with "Applied"
-                _aiHistory.Add("Assistant: " + summary);
-                RefreshAfterAi();
-                OfferRedirectIfUseful(plan.Actions, currentSection);
+                // Archiving/deleting the open note is hard to undo — confirm before applying the batch.
+                if (plan.Actions.Any(a => a.IsDestructive))
+                    ConfirmThenApplyPlan(plan);
+                else
+                    ApplyPlan(plan);
             }
             else
             {
@@ -588,9 +577,78 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>Apply by default — run the actions immediately, report, and offer to jump to the result.</summary>
+    private void ApplyPlan(AiPlan plan)
+    {
+        var svc = App.GetService<AiAssistService>();
+        var currentSection = CurrentSectionName();
+        long? noteId = (RootFrame.Content as MainPage)?.CurrentNoteIdOrNull;
+        var summary = svc.Apply(plan.Actions, noteId);
+        var createdNoteId = svc.LastCreatedNoteId;
+        AiConversation.Children.Add(new TextBlock
+        {
+            Text = "✓ " + summary,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(8, 0, 0, 2),
+            Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"],
+        });
+        AiStatus.Text = summary;             // starts with "Applied"
+        _aiHistory.Add("Assistant: " + summary);
+        RefreshAfterAi();
+        OfferRedirectIfUseful(plan.Actions, currentSection, createdNoteId);
+        ScrollAiToEnd();
+    }
+
+    /// <summary>Show a Yes/No card before applying a plan that would archive or delete the open note.</summary>
+    private void ConfirmThenApplyPlan(AiPlan plan)
+    {
+        var verb = plan.Actions.Any(a => a.Action == AiActionKinds.SetCurrentNoteState && a.Deleted == true)
+            ? "delete" : "archive";
+
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"This will {verb} the current note. Apply?",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)Application.Current.Resources["AppTextPrimaryBrush"],
+        });
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var yes = new Button { Content = "Yes", MinWidth = 64 };
+        var no = new Button { Content = "No", MinWidth = 64 };
+        row.Children.Add(yes);
+        row.Children.Add(no);
+        panel.Children.Add(row);
+
+        var card = new Border
+        {
+            Background = (Brush)Application.Current.Resources["AppHoverBrush"],
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(10),
+            MaxWidth = 290,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Child = panel,
+        };
+
+        yes.Click += (_, _) =>
+        {
+            AiConversation.Children.Remove(card);
+            ApplyPlan(plan);
+        };
+        no.Click += (_, _) =>
+        {
+            AiConversation.Children.Remove(card);
+            AiStatus.Text = "Cancelled — your note was not changed.";
+        };
+
+        AiConversation.Children.Add(card);
+        AiStatus.Text = $"Confirm to {verb} the current note.";
+    }
+
     private async System.Threading.Tasks.Task<bool> TryHandleChatOnlyRequestAsync(string text)
     {
-        if (RootFrame.Content is MainPage mp && mp.HasActiveNote && IsSummaryRequest(text))
+        if (RootFrame.Content is MainPage mp && mp.HasActiveNote && AiIntent.IsSummaryRequest(text))
         {
             AiStatus.Text = "Summarizing...";
             var summary = await mp.PreviewSummaryActiveNoteAsync();
@@ -599,7 +657,7 @@ public sealed partial class MainWindow : Window
             return true;
         }
 
-        if (RootFrame.Content is MainPage notePage && notePage.HasActiveNote && IsRephraseRequest(text))
+        if (RootFrame.Content is MainPage notePage && notePage.HasActiveNote && AiIntent.IsRephraseRequest(text))
         {
             AiStatus.Text = "Rephrasing...";
             var proposal = await notePage.PreviewRephraseSelectionAsync(text);
@@ -613,11 +671,11 @@ public sealed partial class MainWindow : Window
             return true;
         }
 
-        if (!IsReadOnlyRequest(text))
+        if (!AiIntent.IsReadOnlyRequest(text))
             return false;
 
         AiStatus.Text = "Thinking...";
-        var answer = await App.GetService<AiAssistService>().AnswerAsync(text, BuildAiContext());
+        var answer = await App.GetService<AiAssistService>().AnswerAsync(text, await BuildAiContextAsync());
         AppendChatBubble(answer, fromUser: false);
         _aiHistory.Add("Assistant: " + answer);
         AiStatus.Text = "";
@@ -626,16 +684,15 @@ public sealed partial class MainWindow : Window
 
     private bool TryHandleVagueActionRequest(string text)
     {
-        var lower = NormalizeForIntent(text);
         string? question = null;
 
-        if (IsBareCreateRequest(lower, "note", "notes"))
+        if (AiIntent.IsBareCreateRequest(text, "note", "notes"))
             question = "What should the note be called, and what should I put in it?";
-        else if (IsBareCreateRequest(lower, "task", "todo", "to-do"))
+        else if (AiIntent.IsBareCreateRequest(text, "task", "todo", "to-do"))
             question = "What task should I create?";
-        else if (IsBareCreateRequest(lower, "reminder", "reminders"))
+        else if (AiIntent.IsBareCreateRequest(text, "reminder", "reminders"))
             question = "What should I remind you about, and when?";
-        else if (IsBareCreateRequest(lower, "event", "calendar event", "meeting", "appointment"))
+        else if (AiIntent.IsBareCreateRequest(text, "event", "calendar event", "meeting", "appointment"))
             question = "What event should I add, and when should it happen?";
 
         if (question is null)
@@ -647,20 +704,9 @@ public sealed partial class MainWindow : Window
         return true;
     }
 
-    private static bool IsBareCreateRequest(string lower, params string[] nouns)
+    private void OfferRedirectIfUseful(IReadOnlyList<AiAction> actions, string fromSection, long? createdNoteId)
     {
-        if (!ContainsAny(lower, "create", "make", "add", "new", "start"))
-            return false;
-        if (!nouns.Any(n => lower.Contains(n)))
-            return false;
-        if (ContainsAny(lower, "called", "named", "title", "about", "for ", "to ", "tomorrow", "today", "next ", " at ", " on ", ":"))
-            return false;
-        return lower.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length <= 6;
-    }
-
-    private void OfferRedirectIfUseful(IReadOnlyList<AiAction> actions, string fromSection)
-    {
-        var destination = ResolveDestination(actions);
+        var destination = ResolveDestination(actions, createdNoteId);
         if (destination is null || string.Equals(destination.Section, fromSection, StringComparison.OrdinalIgnoreCase))
             return;
 
@@ -704,14 +750,14 @@ public sealed partial class MainWindow : Window
         AiConversation.Children.Add(card);
     }
 
-    private AiDestination? ResolveDestination(IReadOnlyList<AiAction> actions)
+    private AiDestination? ResolveDestination(IReadOnlyList<AiAction> actions, long? createdNoteId)
     {
         foreach (var action in actions)
         {
             switch (action.Action)
             {
                 case AiActionKinds.CreateNote:
-                    return new AiDestination("Notes", "the new note", typeof(MainPage), ResolveCreatedNoteId(action));
+                    return new AiDestination("Notes", "the new note", typeof(MainPage), createdNoteId);
                 case AiActionKinds.UpdateCurrentNote:
                 case AiActionKinds.AppendToCurrentNote:
                 case AiActionKinds.SetCurrentNoteState:
@@ -729,16 +775,6 @@ public sealed partial class MainWindow : Window
         return null;
     }
 
-    private static long? ResolveCreatedNoteId(AiAction action)
-    {
-        if (string.IsNullOrWhiteSpace(action.Title))
-            return null;
-        return App.GetService<INoteRepository>()
-            .GetAllActive()
-            .FirstOrDefault(n => string.Equals(n.Title, action.Title, StringComparison.OrdinalIgnoreCase))
-            ?.Id;
-    }
-
     private void NavigateToDestination(AiDestination destination)
     {
         if (destination.PageType == typeof(MainPage) && destination.NoteId is long noteId)
@@ -747,7 +783,10 @@ public sealed partial class MainWindow : Window
             RootFrame.Navigate(destination.PageType);
     }
 
-    private string CurrentSectionName() => RootFrame.Content?.GetType().Name switch
+    private string CurrentSectionName() => SectionNameFor(RootFrame.Content);
+
+    /// <summary>Single source of truth mapping a page to its section label (used by context + redirect).</summary>
+    private static string SectionNameFor(object? content) => content?.GetType().Name switch
     {
         nameof(MainPage) => "Notes",
         nameof(TasksPage) => "Tasks",
@@ -759,31 +798,7 @@ public sealed partial class MainWindow : Window
         _ => "Unknown",
     };
 
-    private static string NormalizeForIntent(string text)
-        => new(text.ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) || char.IsWhiteSpace(ch) || ch == ':' ? ch : ' ').ToArray());
-
     private sealed record AiDestination(string Section, string Label, Type PageType, long? NoteId);
-
-    private static bool IsSummaryRequest(string text)
-        => ContainsAny(text, "summarize", "summary", "overview", "recap");
-
-    private static bool IsRephraseRequest(string text)
-        => ContainsAny(text, "rephrase", "rewrite", "word better", "make clearer", "improve wording");
-
-    private static bool IsReadOnlyRequest(string text)
-    {
-        if (ContainsAny(text, "create", "add", "make", "set", "schedule", "remind", "delete", "complete",
-                "archive", "pin", "favorite", "unfavorite", "update", "edit", "change", "move", "snooze"))
-            return false;
-        return ContainsAny(text, "what", "which", "who", "when", "where", "why", "how many", "show", "list",
-            "tell me", "summarize", "summary", "overview", "recap", "status", "review", "explain", "do i have");
-    }
-
-    private static bool ContainsAny(string text, params string[] needles)
-    {
-        var lower = text.ToLowerInvariant();
-        return needles.Any(lower.Contains);
-    }
 
     /// <summary>Append a chat bubble: user bubbles right + accent, assistant bubbles left + subtle.
     /// Returns the bubble so transient ones (e.g. "Thinking…") can be removed.</summary>
@@ -1012,30 +1027,22 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private string BuildAiContext()
+    /// <summary>Build the assistant's context string. The open-note part touches the editor (UI thread);
+    /// the app-data part is pure DB reads, so it runs off the UI thread to keep the panel responsive.</summary>
+    private async System.Threading.Tasks.Task<string> BuildAiContextAsync()
     {
         var sb = new StringBuilder();
         sb.AppendLine("CacheNote can create and edit notes, tags, checklists, tasks, reminders, calendar events, favorites, pinned notes, archived notes, deleted notes, title colors, and notification/reminder schedules.");
-        var section = RootFrame.Content?.GetType().Name switch
-        {
-            nameof(MainPage) => "Notes",
-            nameof(TasksPage) => "Tasks",
-            nameof(RemindersPage) => "Reminders",
-            nameof(CalendarPage) => "Calendar",
-            nameof(FavoritesPage) => "Favorites",
-            nameof(SettingsPage) => "Settings",
-            nameof(HomePage) => "Home",
-            _ => "Unknown",
-        };
-        sb.AppendLine("Current section: " + section);
+        sb.AppendLine("Current section: " + SectionNameFor(RootFrame.Content));
         if (RootFrame.Content is MainPage mp)
-            sb.Append(mp.GetAiContext());
-        AppendAppDataContext(sb);
+            sb.Append(mp.GetAiContext());   // reads EditorBox — must stay on the UI thread
+        sb.Append(await System.Threading.Tasks.Task.Run(BuildAppDataContext));
         return sb.ToString();
     }
 
-    private static void AppendAppDataContext(StringBuilder sb)
+    private static string BuildAppDataContext()
     {
+        var sb = new StringBuilder();
         try
         {
             var notes = App.GetService<INoteRepository>().GetAllActive().Take(6).ToList();
@@ -1091,6 +1098,7 @@ public sealed partial class MainWindow : Window
         {
             sb.AppendLine("Some app data could not be read for context.");
         }
+        return sb.ToString();
     }
 
     private static string TruncateText(string? text, int max)

@@ -104,6 +104,10 @@ public sealed class AiAssistService
     public string Apply(IReadOnlyList<AiAction> actions, long? currentNoteId)
         => _executor.Apply(actions, currentNoteId);
 
+    /// <summary>Id of the note created by the most recent <see cref="Apply"/>, if any (null otherwise).
+    /// Lets the caller open the exact new note instead of guessing it back by title.</summary>
+    public long? LastCreatedNoteId => _executor.LastCreatedNoteId;
+
     /// <summary>Parse the assistant turn: a {reply, actions} object, tolerating fences; falls back to a bare array.</summary>
     public static AiPlan ParsePlan(string raw)
     {
@@ -150,7 +154,9 @@ public sealed class AiAssistService
         }
     }
 
-    private static string CleanRephrase(string raw, string original)
+    /// <summary>Strip code fences, "Here is the rewritten text:"-style prefixes, and wrapping quotes the
+    /// model sometimes adds around a rephrase. Falls back to the original if cleaning empties the text.</summary>
+    public static string CleanRephrase(string raw, string original)
     {
         var s = (raw ?? "").Trim();
         if (s.StartsWith("```"))

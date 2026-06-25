@@ -104,6 +104,37 @@ public sealed class AiAssistTests : IDisposable
     }
 
     [Fact]
+    public void Apply_ExposesCreatedNoteId_ForExactNavigation()
+    {
+        var notes = new NoteRepository(_factory);
+        var reminderRepo = new ReminderRepository(_factory);
+        var executor = new AiActionExecutor(notes, new ChecklistRepository(_factory),
+            new TaskService(new TaskRepository(_factory)), new TagService(new TagRepository(_factory)),
+            new EventService(new EventRepository(_factory), reminderRepo), new ReminderService(reminderRepo));
+
+        // Two notes share a title — title lookup would be ambiguous; the id must be exact.
+        notes.Insert(new CacheNote.Core.Models.Note { Title = "Dup", ContentPlain = "first" });
+        executor.Apply([new() { Action = AiActionKinds.CreateNote, Title = "Dup", Body = "second" }], currentNoteId: null);
+
+        Assert.NotNull(executor.LastCreatedNoteId);
+        var created = notes.GetById(executor.LastCreatedNoteId!.Value)!;
+        Assert.Equal("second", created.ContentPlain);
+
+        // A follow-up apply that creates nothing must clear it.
+        executor.Apply([new() { Action = AiActionKinds.AddTag, Name = "x" }], currentNoteId: created.Id);
+        Assert.Null(executor.LastCreatedNoteId);
+    }
+
+    [Fact]
+    public void IsDestructive_OnlyForArchiveOrDeleteState()
+    {
+        Assert.True(new AiAction { Action = AiActionKinds.SetCurrentNoteState, Deleted = true }.IsDestructive);
+        Assert.True(new AiAction { Action = AiActionKinds.SetCurrentNoteState, Archived = true }.IsDestructive);
+        Assert.False(new AiAction { Action = AiActionKinds.SetCurrentNoteState, Pinned = true }.IsDestructive);
+        Assert.False(new AiAction { Action = AiActionKinds.CreateNote, Title = "x" }.IsDestructive);
+    }
+
+    [Fact]
     public async Task FakePlan_Apply_CreatesNoteTaskTag()
     {
         Environment.SetEnvironmentVariable("AI_PROVIDER", "fake");
