@@ -4,6 +4,9 @@ namespace CacheNote.Core.Ai;
 public static class AiActionKinds
 {
     public const string CreateNote = "create_note";
+    public const string UpdateCurrentNote = "update_current_note";
+    public const string AppendToCurrentNote = "append_to_current_note";
+    public const string SetCurrentNoteState = "set_current_note_state";
     public const string AddChecklist = "add_checklist";
     public const string CreateTask = "create_task";
     public const string AddTag = "add_tag";
@@ -22,6 +25,10 @@ public sealed class AiAction
     public string? Priority { get; set; }    // low | medium | high
     public string? Name { get; set; }        // tag name
     public bool? Favorite { get; set; }      // mark a created note as favorite
+    public bool? Pinned { get; set; }
+    public bool? Archived { get; set; }
+    public bool? Deleted { get; set; }
+    public string? TitleColorHex { get; set; }
 
     // Reminder / calendar event fields.
     public string? Date { get; set; }        // YYYY-MM-DD
@@ -37,6 +44,9 @@ public sealed class AiAction
     public string Describe() => Action switch
     {
         AiActionKinds.CreateNote => $"Create note: \"{Title}\"" + (Favorite == true ? " ★" : ""),
+        AiActionKinds.UpdateCurrentNote => $"Update current note" + (string.IsNullOrWhiteSpace(Title) ? "" : $": \"{Title}\""),
+        AiActionKinds.AppendToCurrentNote => "Append to current note",
+        AiActionKinds.SetCurrentNoteState => "Update current note settings",
         AiActionKinds.AddChecklist => $"Add checklist ({Items?.Count ?? 0} items)",
         AiActionKinds.CreateTask => $"Create task: \"{Title}\"" + (Priority is null ? "" : $" [{Priority}]") + DueSuffix(),
         AiActionKinds.AddTag => $"Add tag: #{Name}",

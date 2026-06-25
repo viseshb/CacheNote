@@ -332,7 +332,7 @@
                     </ScrollViewer>
 
                     <!-- Note-context quick actions -->
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+                    <StackPanel x:Name="AiQuickActions" Grid.Row="2" Orientation="Horizontal" Spacing="8">
                         <Button x:Name="AiSummarize" AutomationProperties.AutomationId="AiSummarize" Click="AiSummarize_Click" Content="Summarize note" FontSize="12" />
                         <Button x:Name="AiRephrase" AutomationProperties.AutomationId="AiRephrase" Click="AiRephrase_Click" Content="Rephrase selection" FontSize="12" />
                     </StackPanel>
@@ -347,12 +347,15 @@
                         <TextBox
                             x:Name="AiInput"
                             Grid.Column="0"
+                            MinHeight="36"
                             MaxHeight="100"
-                            AcceptsReturn="False"
+                            AcceptsReturn="True"
                             AutomationProperties.AutomationId="AiChatInput"
                             AutomationProperties.Name="Ask AI"
                             KeyDown="AiInput_KeyDown"
                             PlaceholderText="Ask AI to do something…"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            ScrollViewer.VerticalScrollMode="Auto"
                             TextChanged="AiInput_TextChanged"
                             TextWrapping="Wrap" />
                         <ToggleButton
@@ -361,6 +364,7 @@
                             Width="40"
                             Height="36"
                             Padding="0"
+                            VerticalAlignment="Bottom"
                             AutomationProperties.AutomationId="AiChatMic"
                             AutomationProperties.Name="Dictate"
                             Click="AiMic_Click"
@@ -373,6 +377,7 @@
                             Width="40"
                             Height="36"
                             Padding="0"
+                            VerticalAlignment="Bottom"
                             AutomationProperties.AutomationId="AiChatSend"
                             AutomationProperties.Name="Send"
                             Click="AiSend_Click"

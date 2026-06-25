@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using CacheNote.Core.Data;
 using CacheNote.Core.Models;
 using CacheNote.Core.Services;
@@ -40,7 +41,7 @@ public sealed class AiActionExecutor
     public string Apply(IReadOnlyList<AiAction> actions, long? currentNoteId)
     {
         long lastNoteId = currentNoteId ?? 0;
-        int notes = 0, checklists = 0, tasks = 0, tags = 0, reminders = 0, events = 0, failed = 0;
+        int notes = 0, noteUpdates = 0, checklists = 0, tasks = 0, tags = 0, reminders = 0, events = 0, failed = 0;
 
         foreach (var a in actions)
         {
@@ -51,14 +52,35 @@ public sealed class AiActionExecutor
             switch (a.Action)
             {
                 case AiActionKinds.CreateNote:
+                    var body = a.Body ?? "";
                     lastNoteId = _notes.Insert(new Note
                     {
                         Title = a.Title ?? "Untitled",
-                        ContentPlain = a.Body ?? "",
+                        ContentPlain = body,
+                        ContentRtf = PlainTextToRtf(body),
                     });
                     if (a.Favorite == true)
                         _notes.SetFavorite(lastNoteId, true);
+                    if (a.Pinned == true)
+                        _notes.SetPinned(lastNoteId, true);
+                    if (IsHexColor(a.TitleColorHex))
+                        _notes.SetTitleColor(lastNoteId, a.TitleColorHex);
                     notes++;
+                    break;
+
+                case AiActionKinds.UpdateCurrentNote:
+                    if (UpdateCurrentNote(a, currentNoteId))
+                        noteUpdates++;
+                    break;
+
+                case AiActionKinds.AppendToCurrentNote:
+                    if (AppendToCurrentNote(a, currentNoteId))
+                        noteUpdates++;
+                    break;
+
+                case AiActionKinds.SetCurrentNoteState:
+                    if (SetCurrentNoteState(a, currentNoteId))
+                        noteUpdates++;
                     break;
 
                 case AiActionKinds.AddChecklist:
@@ -106,8 +128,56 @@ public sealed class AiActionExecutor
             }
         }
 
-        var summary = $"Applied: {Parts(("note", notes), ("checklist", checklists), ("task", tasks), ("tag", tags), ("reminder", reminders), ("event", events))}.";
+        var summary = $"Applied: {Parts(("note", notes), ("note update", noteUpdates), ("checklist", checklists), ("task", tasks), ("tag", tags), ("reminder", reminders), ("event", events))}.";
         return failed == 0 ? summary : $"{summary} ({failed} action{(failed == 1 ? "" : "s")} failed)";
+    }
+
+    private bool UpdateCurrentNote(AiAction a, long? currentNoteId)
+    {
+        if (currentNoteId is not long id || _notes.GetById(id) is not { } note)
+            return false;
+
+        var title = string.IsNullOrWhiteSpace(a.Title) ? note.Title : a.Title!.Trim();
+        var body = a.Body ?? note.ContentPlain ?? "";
+        _notes.UpdateContent(id, title, PlainTextToRtf(body), body);
+        ApplyNoteFlags(id, a);
+        return true;
+    }
+
+    private bool AppendToCurrentNote(AiAction a, long? currentNoteId)
+    {
+        if (currentNoteId is not long id || _notes.GetById(id) is not { } note || string.IsNullOrWhiteSpace(a.Body))
+            return false;
+
+        var existing = note.ContentPlain ?? "";
+        var addition = a.Body!.Trim();
+        var body = string.IsNullOrWhiteSpace(existing) ? addition : existing.TrimEnd() + Environment.NewLine + Environment.NewLine + addition;
+        _notes.UpdateContent(id, note.Title, PlainTextToRtf(body), body);
+        ApplyNoteFlags(id, a);
+        return true;
+    }
+
+    private bool SetCurrentNoteState(AiAction a, long? currentNoteId)
+    {
+        if (currentNoteId is not long id || _notes.GetById(id) is null)
+            return false;
+        ApplyNoteFlags(id, a);
+        return a.Favorite is not null || a.Pinned is not null || a.Archived is not null ||
+               a.Deleted is not null || IsHexColor(a.TitleColorHex);
+    }
+
+    private void ApplyNoteFlags(long id, AiAction a)
+    {
+        if (a.Favorite is bool favorite)
+            _notes.SetFavorite(id, favorite);
+        if (a.Pinned is bool pinned)
+            _notes.SetPinned(id, pinned);
+        if (a.Archived is bool archived)
+            _notes.SetArchived(id, archived);
+        if (a.Deleted is bool deleted && deleted)
+            _notes.SoftDelete(id);
+        if (IsHexColor(a.TitleColorHex))
+            _notes.SetTitleColor(id, a.TitleColorHex);
     }
 
     // A reminder: schedule the nudge AND drop it on the calendar (no extra alert there) so it shows in both.
@@ -170,6 +240,37 @@ public sealed class AiActionExecutor
         var present = items.Where(i => i.Count > 0).Select(i => $"{i.Count} {i.Label}{(i.Count == 1 ? "" : "s")}").ToList();
         return present.Count == 0 ? "nothing" : string.Join(", ", present);
     }
+
+    private static byte[] PlainTextToRtf(string text)
+        => Encoding.UTF8.GetBytes(@"{\rtf1\ansi\deff0{\fonttbl{\f0 Segoe UI;}}\f0\fs32 " + EscapeRtf(text) + "}");
+
+    private static string EscapeRtf(string text)
+    {
+        var sb = new StringBuilder();
+        foreach (var ch in (text ?? "").Replace("\r\n", "\n").Replace('\r', '\n'))
+        {
+            switch (ch)
+            {
+                case '\\': sb.Append(@"\\"); break;
+                case '{': sb.Append(@"\{"); break;
+                case '}': sb.Append(@"\}"); break;
+                case '\n': sb.Append(@"\par "); break;
+                default:
+                    if (ch <= 0x7f)
+                        sb.Append(ch);
+                    else
+                        sb.Append(@"\u").Append((short)ch).Append('?');
+                    break;
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static bool IsHexColor(string? hex)
+        => !string.IsNullOrWhiteSpace(hex) &&
+           hex.Length == 7 &&
+           hex[0] == '#' &&
+           hex.Skip(1).All(Uri.IsHexDigit);
 
     private static DateTime? ParseDue(string? due)
         => DateTime.TryParse(due, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var dt)

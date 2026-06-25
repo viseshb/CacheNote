@@ -1,10 +1,13 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using CommunityToolkit.Mvvm.Input;
 using H.NotifyIcon;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -14,11 +17,14 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using CacheNote.Core.Ai;
 using CacheNote.Core.Cloud;
+using CacheNote.Core.Data;
 using CacheNote.Core.Services;
 using CacheNote.Core.Speech;
+using CacheNote_App.Controls;
 using CacheNote_App.Services;
 using CacheNote_App.Interop;
 using Windows.Graphics;
+using Windows.UI.Core;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -73,6 +79,7 @@ public sealed partial class MainWindow : Window
         // ApplyTheme(Enum.TryParse<ElementTheme>(saved, out var t) ? t : ElementTheme.Default, persist: false);
 
         RootFrame.Navigate(typeof(HomePage));
+        RootFrame.Navigated += (_, _) => RefreshAiPanelForCurrentPage();
 
         // When the AI panel finishes closing, fully collapse it (so its controls aren't hit-testable).
         ((Storyboard)RootGrid.Resources["AiCloseStoryboard"]).Completed += (_, _) =>
@@ -167,6 +174,7 @@ public sealed partial class MainWindow : Window
     // ----- reminder engine (runs on the UI dispatcher; keeps ticking while in the tray) -----
     private DispatcherQueueTimer? _reminderTimer;
     private int _syncTick;
+    private readonly HashSet<long> _inAppReminderIds = new();
 
     private void StartReminderEngine()
     {
@@ -232,31 +240,95 @@ public sealed partial class MainWindow : Window
     /// <summary>In-app reminder banner with the same actions as the toast (Complete / Snooze).</summary>
     private void ShowInAppReminder(long id, string? message)
     {
-        var bar = new InfoBar
+        if (!_inAppReminderIds.Add(id))
+            return;
+
+        var titleRow = new Grid { ColumnSpacing = 8 };
+        titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        title.Children.Add(new FontIcon
         {
-            Title = "Reminder",
-            Message = string.IsNullOrWhiteSpace(message) ? "You have a reminder." : message,
-            Severity = InfoBarSeverity.Informational,
-            IsOpen = true,
+            Glyph = "\uE823",
+            FontSize = 15,
+            Foreground = (Brush)Application.Current.Resources["AppAccentBrush"],
+        });
+        title.Children.Add(new TextBlock
+        {
+            Text = "Reminder",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = (Brush)Application.Current.Resources["AppTextPrimaryBrush"],
+        });
+        titleRow.Children.Add(title);
+
+        var close = new Button
+        {
+            MinWidth = 0,
+            Padding = new Thickness(6),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Content = new FontIcon { Glyph = "\uE711", FontSize = 12 },
+        };
+        ToolTipService.SetToolTip(close, "Dismiss");
+        Grid.SetColumn(close, 1);
+        titleRow.Children.Add(close);
+
+        var body = new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(message) ? "You have a reminder." : message,
+            TextWrapping = TextWrapping.WrapWholeWords,
+            Foreground = (Brush)Application.Current.Resources["AppTextPrimaryBrush"],
+            Margin = new Thickness(0, 8, 0, 0),
         };
 
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 12) };
-        actions.Children.Add(MakeReminderAction("Complete", () => App.GetService<IReminderService>().Complete(id), bar));
-        actions.Children.Add(MakeReminderAction("Snooze 5m", () => App.GetService<IReminderService>().Snooze(id, 5, DateTime.UtcNow), bar));
-        actions.Children.Add(MakeReminderAction("Snooze 15m", () => App.GetService<IReminderService>().Snooze(id, 15, DateTime.UtcNow), bar));
-        bar.Content = actions;
+        var banner = new Border
+        {
+            MaxWidth = 560,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Background = (Brush)Application.Current.Resources["AppSurfaceBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["AppBorderBrush"],
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(14),
+        };
 
-        bar.Closed += (s, _) => InAppNotifyHost.Children.Remove(s);
-        InAppNotifyHost.Children.Add(bar);
+        void CloseBanner()
+        {
+            _inAppReminderIds.Remove(id);
+            InAppNotifyHost.Children.Remove(banner);
+        }
+
+        close.Click += (_, _) => CloseBanner();
+
+        var actions = new WrapPanel { HorizontalSpacing = 8, VerticalSpacing = 8, Margin = new Thickness(0, 12, 0, 0) };
+        actions.Children.Add(MakeReminderAction("Open", () => NavigateToReminders(), CloseBanner));
+        actions.Children.Add(MakeReminderAction("Complete", () => App.GetService<IReminderService>().Complete(id), CloseBanner));
+        actions.Children.Add(MakeReminderAction("Snooze 5m", () => App.GetService<IReminderService>().Snooze(id, 5, DateTime.UtcNow), CloseBanner));
+        actions.Children.Add(MakeReminderAction("Snooze 15m", () => App.GetService<IReminderService>().Snooze(id, 15, DateTime.UtcNow), CloseBanner));
+
+        var content = new StackPanel();
+        content.Children.Add(titleRow);
+        content.Children.Add(body);
+        content.Children.Add(actions);
+        banner.Child = content;
+
+        InAppNotifyHost.Children.Add(banner);
     }
 
-    private Button MakeReminderAction(string label, Action act, InfoBar bar)
+    private Button MakeReminderAction(string label, Action act, Action close)
     {
-        var b = new Button { Content = label, FontSize = 12 };
+        var b = new Button
+        {
+            Content = label,
+            FontSize = 12,
+            MinWidth = 92,
+            Padding = new Thickness(10, 5, 10, 5),
+        };
         b.Click += (_, _) =>
         {
             try { act(); } catch { /* DB hiccup — banner still closes; next poll re-fires if needed */ }
-            bar.IsOpen = false;
+            close();
             RefreshRemindersIfOpen();
         };
         return b;
@@ -351,6 +423,9 @@ public sealed partial class MainWindow : Window
     private readonly List<string> _aiHistory = new();   // running transcript for multi-turn context
     private ISpeechToTextService? _aiStt;
     private MicCaptureService? _aiMic;
+    private Border? _activeRephraseCard;
+    private TextBlock? _activeRephraseText;
+    private string _pendingRephrase = "";
 
     /// <summary>Size the floating chat panel to fit inside the window at any width/height.</summary>
     private void AdjustAiPanel(double width, double height)
@@ -370,6 +445,7 @@ public sealed partial class MainWindow : Window
         if (_aiOpen)
             return;
         _aiOpen = true;
+        RefreshAiPanelForCurrentPage();
         AiPanel.Visibility = Visibility.Visible;
         AiPanel.IsHitTestVisible = true;
         AiBall.IsHitTestVisible = false;
@@ -388,13 +464,48 @@ public sealed partial class MainWindow : Window
         ((Storyboard)RootGrid.Resources["AiCloseStoryboard"]).Begin();   // Completed → collapse
     }
 
+    private void RefreshAiPanelForCurrentPage()
+    {
+        if (AiQuickActions is null)
+            return;
+
+        var onNotes = RootFrame.Content is MainPage;
+        AiQuickActions.Visibility = onNotes ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!_aiOpen)
+            return;
+
+        AiStatus.Text = RootFrame.Content switch
+        {
+            MainPage => "Ask about this note, summarize it, or review a selected rewrite here.",
+            TasksPage => "Ask about tasks, due dates, priorities, or ask me to create a task.",
+            RemindersPage => "Ask about reminders, upcoming nudges, or ask me to schedule one.",
+            CalendarPage => "Ask about your calendar, meetings, agenda, or ask me to add an event.",
+            FavoritesPage => "Ask about pinned and favorite notes, or ask me to create/update notes.",
+            SettingsPage => "Ask about app setup, AI keys, notifications, or preferences.",
+            _ => "Ask me about CacheNote, or tell me what to create, edit, or schedule.",
+        };
+    }
+
     private void AiInput_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == Windows.System.VirtualKey.Enter)
         {
+            if (IsShiftDown())
+                return;
             e.Handled = true;
             _ = PlanAsync();
         }
+    }
+
+    private static bool IsShiftDown()
+    {
+        var left = InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.LeftShift);
+        var right = InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.RightShift);
+        var generic = InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift);
+        return left.HasFlag(CoreVirtualKeyStates.Down) ||
+               right.HasFlag(CoreVirtualKeyStates.Down) ||
+               generic.HasFlag(CoreVirtualKeyStates.Down);
     }
 
     private async void AiSend_Click(object sender, RoutedEventArgs e) => await PlanAsync();
@@ -417,13 +528,25 @@ public sealed partial class MainWindow : Window
         AppendChatBubble(text, fromUser: true);
         _aiHistory.Add("User: " + text);
         AiInput.Text = "";
+
+        if (TryHandleVagueActionRequest(text))
+        {
+            ScrollAiToEnd();
+            return;
+        }
+
+        if (await TryHandleChatOnlyRequestAsync(text))
+        {
+            ScrollAiToEnd();
+            return;
+        }
         // Show "Thinking…" as the next line of the conversation (below the user's message), not above.
         var thinking = AppendChatBubble("Thinking…", fromUser: false);
         ScrollAiToEnd();
 
         try
         {
-            var plan = await svc.PlanAsync(string.Join("\n", _aiHistory));
+            var plan = await svc.PlanAsync(string.Join("\n", _aiHistory), BuildAiContext());
             AiConversation.Children.Remove(thinking);
             if (!string.IsNullOrWhiteSpace(plan.Reply))
             {
@@ -434,6 +557,7 @@ public sealed partial class MainWindow : Window
             if (plan.Actions.Count > 0)
             {
                 // Act by default — apply immediately, then show what was created.
+                var currentSection = CurrentSectionName();
                 long? noteId = (RootFrame.Content as MainPage)?.CurrentNoteIdOrNull;
                 var summary = svc.Apply(plan.Actions, noteId);
                 AiConversation.Children.Add(new TextBlock
@@ -447,6 +571,7 @@ public sealed partial class MainWindow : Window
                 AiStatus.Text = summary;             // starts with "Applied"
                 _aiHistory.Add("Assistant: " + summary);
                 RefreshAfterAi();
+                OfferRedirectIfUseful(plan.Actions, currentSection);
             }
             else
             {
@@ -461,6 +586,203 @@ public sealed partial class MainWindow : Window
             AiStatus.Text = "AI error: " + ex.Message;
             ScrollAiToEnd();
         }
+    }
+
+    private async System.Threading.Tasks.Task<bool> TryHandleChatOnlyRequestAsync(string text)
+    {
+        if (RootFrame.Content is MainPage mp && mp.HasActiveNote && IsSummaryRequest(text))
+        {
+            AiStatus.Text = "Summarizing...";
+            var summary = await mp.PreviewSummaryActiveNoteAsync();
+            AppendChatBubble("Summary:\n" + summary, fromUser: false);
+            AiStatus.Text = "Summary shown here. Your note was not changed.";
+            return true;
+        }
+
+        if (RootFrame.Content is MainPage notePage && notePage.HasActiveNote && IsRephraseRequest(text))
+        {
+            AiStatus.Text = "Rephrasing...";
+            var proposal = await notePage.PreviewRephraseSelectionAsync(text);
+            if (!proposal.HasSelection)
+            {
+                AiStatus.Text = proposal.Message;
+                return true;
+            }
+            ShowRephraseProposal(proposal.Text);
+            AiStatus.Text = proposal.Message;
+            return true;
+        }
+
+        if (!IsReadOnlyRequest(text))
+            return false;
+
+        AiStatus.Text = "Thinking...";
+        var answer = await App.GetService<AiAssistService>().AnswerAsync(text, BuildAiContext());
+        AppendChatBubble(answer, fromUser: false);
+        _aiHistory.Add("Assistant: " + answer);
+        AiStatus.Text = "";
+        return true;
+    }
+
+    private bool TryHandleVagueActionRequest(string text)
+    {
+        var lower = NormalizeForIntent(text);
+        string? question = null;
+
+        if (IsBareCreateRequest(lower, "note", "notes"))
+            question = "What should the note be called, and what should I put in it?";
+        else if (IsBareCreateRequest(lower, "task", "todo", "to-do"))
+            question = "What task should I create?";
+        else if (IsBareCreateRequest(lower, "reminder", "reminders"))
+            question = "What should I remind you about, and when?";
+        else if (IsBareCreateRequest(lower, "event", "calendar event", "meeting", "appointment"))
+            question = "What event should I add, and when should it happen?";
+
+        if (question is null)
+            return false;
+
+        AppendChatBubble(question, fromUser: false);
+        _aiHistory.Add("Assistant: " + question);
+        AiStatus.Text = "I need one detail before I change the app.";
+        return true;
+    }
+
+    private static bool IsBareCreateRequest(string lower, params string[] nouns)
+    {
+        if (!ContainsAny(lower, "create", "make", "add", "new", "start"))
+            return false;
+        if (!nouns.Any(n => lower.Contains(n)))
+            return false;
+        if (ContainsAny(lower, "called", "named", "title", "about", "for ", "to ", "tomorrow", "today", "next ", " at ", " on ", ":"))
+            return false;
+        return lower.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length <= 6;
+    }
+
+    private void OfferRedirectIfUseful(IReadOnlyList<AiAction> actions, string fromSection)
+    {
+        var destination = ResolveDestination(actions);
+        if (destination is null || string.Equals(destination.Section, fromSection, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Open {destination.Label} now?",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)Application.Current.Resources["AppTextPrimaryBrush"],
+        });
+
+        var actionsRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var yes = new Button { Content = "Yes", MinWidth = 64 };
+        var no = new Button { Content = "No", MinWidth = 64 };
+        actionsRow.Children.Add(yes);
+        actionsRow.Children.Add(no);
+        panel.Children.Add(actionsRow);
+
+        var card = new Border
+        {
+            Background = (Brush)Application.Current.Resources["AppHoverBrush"],
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(10),
+            MaxWidth = 290,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Child = panel,
+        };
+
+        yes.Click += (_, _) =>
+        {
+            NavigateToDestination(destination);
+            AiConversation.Children.Remove(card);
+            AiStatus.Text = $"Opened {destination.Label}.";
+        };
+        no.Click += (_, _) =>
+        {
+            AiConversation.Children.Remove(card);
+            AiStatus.Text = "";
+        };
+
+        AiConversation.Children.Add(card);
+    }
+
+    private AiDestination? ResolveDestination(IReadOnlyList<AiAction> actions)
+    {
+        foreach (var action in actions)
+        {
+            switch (action.Action)
+            {
+                case AiActionKinds.CreateNote:
+                    return new AiDestination("Notes", "the new note", typeof(MainPage), ResolveCreatedNoteId(action));
+                case AiActionKinds.UpdateCurrentNote:
+                case AiActionKinds.AppendToCurrentNote:
+                case AiActionKinds.SetCurrentNoteState:
+                case AiActionKinds.AddChecklist:
+                case AiActionKinds.AddTag:
+                    return new AiDestination("Notes", "Notes", typeof(MainPage), (RootFrame.Content as MainPage)?.CurrentNoteIdOrNull);
+                case AiActionKinds.CreateTask:
+                    return new AiDestination("Tasks", "Tasks", typeof(TasksPage), null);
+                case AiActionKinds.CreateReminder:
+                    return new AiDestination("Reminders", "Reminders", typeof(RemindersPage), null);
+                case AiActionKinds.CreateEvent:
+                    return new AiDestination("Calendar", "Calendar", typeof(CalendarPage), null);
+            }
+        }
+        return null;
+    }
+
+    private static long? ResolveCreatedNoteId(AiAction action)
+    {
+        if (string.IsNullOrWhiteSpace(action.Title))
+            return null;
+        return App.GetService<INoteRepository>()
+            .GetAllActive()
+            .FirstOrDefault(n => string.Equals(n.Title, action.Title, StringComparison.OrdinalIgnoreCase))
+            ?.Id;
+    }
+
+    private void NavigateToDestination(AiDestination destination)
+    {
+        if (destination.PageType == typeof(MainPage) && destination.NoteId is long noteId)
+            RootFrame.Navigate(typeof(MainPage), noteId);
+        else
+            RootFrame.Navigate(destination.PageType);
+    }
+
+    private string CurrentSectionName() => RootFrame.Content?.GetType().Name switch
+    {
+        nameof(MainPage) => "Notes",
+        nameof(TasksPage) => "Tasks",
+        nameof(RemindersPage) => "Reminders",
+        nameof(CalendarPage) => "Calendar",
+        nameof(FavoritesPage) => "Favorites",
+        nameof(SettingsPage) => "Settings",
+        nameof(HomePage) => "Home",
+        _ => "Unknown",
+    };
+
+    private static string NormalizeForIntent(string text)
+        => new(text.ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) || char.IsWhiteSpace(ch) || ch == ':' ? ch : ' ').ToArray());
+
+    private sealed record AiDestination(string Section, string Label, Type PageType, long? NoteId);
+
+    private static bool IsSummaryRequest(string text)
+        => ContainsAny(text, "summarize", "summary", "overview", "recap");
+
+    private static bool IsRephraseRequest(string text)
+        => ContainsAny(text, "rephrase", "rewrite", "word better", "make clearer", "improve wording");
+
+    private static bool IsReadOnlyRequest(string text)
+    {
+        if (ContainsAny(text, "create", "add", "make", "set", "schedule", "remind", "delete", "complete",
+                "archive", "pin", "favorite", "unfavorite", "update", "edit", "change", "move", "snooze"))
+            return false;
+        return ContainsAny(text, "what", "which", "who", "when", "where", "why", "how many", "show", "list",
+            "tell me", "summarize", "summary", "overview", "recap", "status", "review", "explain", "do i have");
+    }
+
+    private static bool ContainsAny(string text, params string[] needles)
+    {
+        var lower = text.ToLowerInvariant();
+        return needles.Any(lower.Contains);
     }
 
     /// <summary>Append a chat bubble: user bubbles right + accent, assistant bubbles left + subtle.
@@ -504,7 +826,13 @@ public sealed partial class MainWindow : Window
             return;
         }
         AiStatus.Text = "Summarizing…";
-        try { AiStatus.Text = await mp.SummarizeActiveNoteAsync(); }
+        try
+        {
+            var summary = await mp.PreviewSummaryActiveNoteAsync();
+            AppendChatBubble("Summary:\n" + summary, fromUser: false);
+            AiStatus.Text = "Summary shown here. Your note was not changed.";
+            ScrollAiToEnd();
+        }
         catch (Exception ex) { AiStatus.Text = "AI error: " + ex.Message; }
     }
 
@@ -516,8 +844,159 @@ public sealed partial class MainWindow : Window
             return;
         }
         AiStatus.Text = "Rephrasing…";
-        try { AiStatus.Text = await mp.RephraseSelectionAsync(); }
+        try
+        {
+            var proposal = await mp.PreviewRephraseSelectionAsync();
+            if (!proposal.HasSelection)
+            {
+                AiStatus.Text = proposal.Message;
+                return;
+            }
+            ShowRephraseProposal(proposal.Text);
+            AiStatus.Text = proposal.Message;
+        }
         catch (Exception ex) { AiStatus.Text = "AI error: " + ex.Message; }
+    }
+
+    private void ShowRephraseProposal(string rephrased)
+    {
+        RemoveActiveRephraseCard();
+        _pendingRephrase = rephrased;
+
+        var text = new TextBlock
+        {
+            Text = rephrased,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 13,
+            Foreground = (Brush)Application.Current.Resources["AppTextPrimaryBrush"],
+        };
+        _activeRephraseText = text;
+
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Thickness(0, 10, 0, 0),
+        };
+
+        var accept = new Button { Content = "✓", MinWidth = 36 };
+        var reject = new Button { Content = "×", MinWidth = 36 };
+        var other = new Button { Content = "Other", MinWidth = 72 };
+        ToolTipService.SetToolTip(accept, "Replace selected text");
+        ToolTipService.SetToolTip(reject, "Keep original text");
+        ToolTipService.SetToolTip(other, "Describe how to rephrase it");
+        actions.Children.Add(accept);
+        actions.Children.Add(reject);
+        actions.Children.Add(other);
+
+        var instruction = new TextBox
+        {
+            AcceptsReturn = true,
+            PlaceholderText = "Tell me how to make it better...",
+            Visibility = Visibility.Collapsed,
+            Margin = new Thickness(0, 8, 0, 0),
+            MinHeight = 64,
+            MaxHeight = 120,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        instruction.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
+        instruction.SetValue(ScrollViewer.VerticalScrollModeProperty, ScrollMode.Auto);
+
+        accept.Click += (_, _) => ApplyPendingRephrase();
+        reject.Click += (_, _) =>
+        {
+            RemoveActiveRephraseCard();
+            AiStatus.Text = "Original kept. Tell me how I can do better.";
+            AiInput.Focus(FocusState.Programmatic);
+        };
+        other.Click += (_, _) =>
+        {
+            instruction.Visibility = Visibility.Visible;
+            instruction.Focus(FocusState.Programmatic);
+        };
+        instruction.KeyDown += async (_, e) =>
+        {
+            if (e.Key != Windows.System.VirtualKey.Enter)
+                return;
+            if (IsShiftDown())
+                return;
+            e.Handled = true;
+            await RegenerateRephraseAsync(instruction.Text);
+        };
+
+        var content = new StackPanel();
+        content.Children.Add(new TextBlock
+        {
+            Text = "Rephrased text",
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"],
+            Margin = new Thickness(0, 0, 0, 6),
+        });
+        content.Children.Add(text);
+        content.Children.Add(actions);
+        content.Children.Add(instruction);
+
+        _activeRephraseCard = new Border
+        {
+            Background = (Brush)Application.Current.Resources["AppHoverBrush"],
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(10),
+            MaxWidth = 290,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Child = content,
+        };
+        AiConversation.Children.Add(_activeRephraseCard);
+        ScrollAiToEnd();
+    }
+
+    private async System.Threading.Tasks.Task RegenerateRephraseAsync(string instruction)
+    {
+        if (RootFrame.Content is not MainPage mp || string.IsNullOrWhiteSpace(instruction))
+            return;
+        AiStatus.Text = "Rephrasing with your note...";
+        try
+        {
+            var proposal = await mp.PreviewRephraseSelectionAsync(instruction);
+            if (!proposal.HasSelection)
+            {
+                AiStatus.Text = proposal.Message;
+                return;
+            }
+            _pendingRephrase = proposal.Text;
+            if (_activeRephraseText is not null)
+                _activeRephraseText.Text = proposal.Text;
+            AiStatus.Text = "Review the updated rephrase.";
+            ScrollAiToEnd();
+        }
+        catch (Exception ex) { AiStatus.Text = "AI error: " + ex.Message; }
+    }
+
+    private void ApplyPendingRephrase()
+    {
+        if (RootFrame.Content is not MainPage mp || string.IsNullOrWhiteSpace(_pendingRephrase))
+        {
+            AiStatus.Text = "Select some text in the note to rephrase.";
+            return;
+        }
+        if (mp.ApplyRephraseSelection(_pendingRephrase))
+        {
+            RemoveActiveRephraseCard();
+            AiStatus.Text = "Selection replaced.";
+        }
+        else
+        {
+            AiStatus.Text = "Select some text in the note to rephrase.";
+        }
+    }
+
+    private void RemoveActiveRephraseCard()
+    {
+        if (_activeRephraseCard is not null)
+            AiConversation.Children.Remove(_activeRephraseCard);
+        _activeRephraseCard = null;
+        _activeRephraseText = null;
+        _pendingRephrase = "";
     }
 
     /// <summary>Reload whichever section is showing so AI-created content appears immediately.</summary>
@@ -527,7 +1006,97 @@ public sealed partial class MainWindow : Window
         {
             case MainPage mp: mp.ReloadAfterAi(); break;
             case TasksPage tp: tp.Reload(); break;
+            case RemindersPage rp: rp.Vm.Load(); break;
+            case CalendarPage cp: cp.Vm.Reload(); break;
+            case FavoritesPage fp: fp.Vm.Load(); break;
         }
+    }
+
+    private string BuildAiContext()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("CacheNote can create and edit notes, tags, checklists, tasks, reminders, calendar events, favorites, pinned notes, archived notes, deleted notes, title colors, and notification/reminder schedules.");
+        var section = RootFrame.Content?.GetType().Name switch
+        {
+            nameof(MainPage) => "Notes",
+            nameof(TasksPage) => "Tasks",
+            nameof(RemindersPage) => "Reminders",
+            nameof(CalendarPage) => "Calendar",
+            nameof(FavoritesPage) => "Favorites",
+            nameof(SettingsPage) => "Settings",
+            nameof(HomePage) => "Home",
+            _ => "Unknown",
+        };
+        sb.AppendLine("Current section: " + section);
+        if (RootFrame.Content is MainPage mp)
+            sb.Append(mp.GetAiContext());
+        AppendAppDataContext(sb);
+        return sb.ToString();
+    }
+
+    private static void AppendAppDataContext(StringBuilder sb)
+    {
+        try
+        {
+            var notes = App.GetService<INoteRepository>().GetAllActive().Take(6).ToList();
+            if (notes.Count > 0)
+            {
+                sb.AppendLine("Recent notes:");
+                foreach (var n in notes)
+                    sb.AppendLine("- " + (string.IsNullOrWhiteSpace(n.Title) ? "Untitled" : n.Title) + ": " + TruncateText(n.ContentPlain, 140));
+            }
+
+            var favorites = App.GetService<INoteRepository>().GetFavoritesAndPinned().Take(6).ToList();
+            if (favorites.Count > 0)
+            {
+                sb.AppendLine("Pinned/favorite notes:");
+                foreach (var n in favorites)
+                    sb.AppendLine("- " + (string.IsNullOrWhiteSpace(n.Title) ? "Untitled" : n.Title));
+            }
+
+            var tasks = App.GetService<ITaskService>().GetAll().Take(8).ToList();
+            if (tasks.Count > 0)
+            {
+                sb.AppendLine("Tasks:");
+                foreach (var t in tasks)
+                {
+                    var due = t.DueUtc is DateTime d ? DateTime.SpecifyKind(d, DateTimeKind.Utc).ToLocalTime().ToString("MMM d h:mm tt") : "no due date";
+                    sb.AppendLine($"- {(t.IsCompleted ? "done" : "open")}: {t.Title} ({t.Priority}, {due})");
+                }
+            }
+
+            var reminders = App.GetService<IReminderService>().GetAll().Take(8).ToList();
+            if (reminders.Count > 0)
+            {
+                sb.AppendLine("Reminders:");
+                foreach (var r in reminders)
+                {
+                    var when = DateTime.SpecifyKind(r.EffectiveFireUtc, DateTimeKind.Utc).ToLocalTime().ToString("MMM d h:mm tt");
+                    sb.AppendLine($"- {(r.IsDismissed ? "done" : "open")}: {(string.IsNullOrWhiteSpace(r.Message) ? "Reminder" : r.Message)} ({when}, {r.Repeat})");
+                }
+            }
+
+            var events = App.GetService<EventService>().GetAll().Take(8).ToList();
+            if (events.Count > 0)
+            {
+                sb.AppendLine("Calendar events:");
+                foreach (var e in events)
+                {
+                    var when = DateTime.SpecifyKind(e.StartUtc, DateTimeKind.Utc).ToLocalTime().ToString("MMM d h:mm tt");
+                    sb.AppendLine($"- {e.Title} ({e.Kind}, {when}, {e.Recurrence})");
+                }
+            }
+        }
+        catch
+        {
+            sb.AppendLine("Some app data could not be read for context.");
+        }
+    }
+
+    private static string TruncateText(string? text, int max)
+    {
+        var s = (text ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return s.Length <= max ? s : s[..max] + "...";
     }
 
     // ----- AI ball dictation (shares the single-session DictationCoordinator with the editor mic) -----

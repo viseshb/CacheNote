@@ -49,6 +49,10 @@ public sealed partial class MainPage : Page
     private bool _listVisible = true;
     private int _selStart;
     private int _selEnd;
+    private long _lastEditorSelectionNoteId;
+    private int _lastEditorSelectionStart;
+    private int _lastEditorSelectionEnd;
+    private string _lastEditorSelectionText = "";
 
     // Responsive state: below Responsive.CompactMax the notes view becomes a single-pane
     // master-detail and the editor toolbar collapses into the "Tools" dropdown.
@@ -73,7 +77,7 @@ public sealed partial class MainPage : Page
         FontSizeCombo.ItemsSource = Sizes;
         FontSizeCombo.Text = "16";
         BuildSwatches();
-        CustomColorPicker.Color = Color.FromArgb(255, 0x25, 0x63, 0xEB); // vivid default (so light mode isn't seeded dark)
+        CustomColorPicker.Color = Color.FromArgb(255, 0xFF, 0xFF, 0xFF);
         _syncing = false;
 
         // We have our own formatting toolbar — suppress the floating selection bar
@@ -464,6 +468,7 @@ public sealed partial class MainPage : Page
         _loading = false;
         LoadAttachments(id);
         ApplyTitleColor();
+        ClearRememberedSelection();
     }
 
     /// <summary>Paint the title box with the note's stored title color (none → inherit theme).</summary>
@@ -591,6 +596,14 @@ public sealed partial class MainPage : Page
     public long? CurrentNoteIdOrNull => Vm.CurrentNoteId == 0 ? null : Vm.CurrentNoteId;
 
     /// <summary>Summarize the open note and append the summary at the end.</summary>
+    public async Task<string> PreviewSummaryActiveNoteAsync()
+    {
+        var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
+        EditorBox.Document.GetText(TextGetOptions.None, out var plain);
+        return await svc.SummarizeAsync(plain);
+    }
+
+    /// <summary>Summarize the open note and append the summary at the end. Kept for older tests/callers.</summary>
     public async Task<string> SummarizeActiveNoteAsync()
     {
         var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
@@ -602,17 +615,67 @@ public sealed partial class MainPage : Page
         return "Summary inserted at the end of the note.";
     }
 
-    /// <summary>Rephrase the editor's current selection in place.</summary>
+    /// <summary>Generate a rephrase proposal without changing the note.</summary>
+    public async Task<(bool HasSelection, string Text, string Message)> PreviewRephraseSelectionAsync(string? instruction = null)
+    {
+        var (start, end, text) = CurrentOrRememberedSelection();
+        if (string.IsNullOrWhiteSpace(text) || end <= start)
+            return (false, "", "Select some text in the note to rephrase.");
+
+        _lastEditorSelectionNoteId = Vm.CurrentNoteId;
+        _lastEditorSelectionStart = start;
+        _lastEditorSelectionEnd = end;
+        _lastEditorSelectionText = text;
+
+        var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
+        var rephrased = await svc.RephraseAsync(text, instruction);
+        return (true, rephrased, "Review the rephrase.");
+    }
+
+    /// <summary>Apply an approved rephrase to the remembered editor selection.</summary>
+    public bool ApplyRephraseSelection(string rephrased)
+    {
+        var (start, end, text) = CurrentOrRememberedSelection();
+        if (string.IsNullOrWhiteSpace(text) || end <= start || string.IsNullOrWhiteSpace(rephrased))
+            return false;
+
+        var selection = EditorBox.Document.Selection;
+        EditorBox.Focus(FocusState.Programmatic);
+        selection.SetRange(start, end);
+        selection.SetText(TextSetOptions.None, rephrased);
+        selection.SetRange(start + rephrased.Length, start + rephrased.Length);
+        ClearRememberedSelection();
+        OnContentChanged(this, null!);
+        return true;
+    }
+
+    /// <summary>Rephrase the editor's current selection in place. Kept for older tests/callers.</summary>
     public async Task<string> RephraseSelectionAsync()
     {
-        var sel = EditorBox.Document.Selection.Text;
-        if (string.IsNullOrWhiteSpace(sel))
-            return "Select some text in the note to rephrase.";
-        var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
-        var rephrased = await svc.RephraseAsync(sel);
-        EditorBox.Document.Selection.SetText(TextSetOptions.None, rephrased);
-        OnContentChanged(this, null!);
-        return "Selection rephrased.";
+        var proposal = await PreviewRephraseSelectionAsync();
+        if (!proposal.HasSelection)
+            return proposal.Message;
+        return ApplyRephraseSelection(proposal.Text) ? "Selection rephrased." : "Select some text in the note to rephrase.";
+    }
+
+    /// <summary>Compact app context for the global assistant: open note + selected text.</summary>
+    public string GetAiContext()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Current page: Notes");
+        sb.AppendLine($"Open note id: {Vm.CurrentNoteId}");
+        sb.AppendLine("Open note title: " + (string.IsNullOrWhiteSpace(Vm.Title) ? "Untitled" : Vm.Title));
+
+        EditorBox.Document.GetText(TextGetOptions.None, out var plain);
+        plain = (plain ?? "").Trim();
+        if (plain.Length > 0)
+            sb.AppendLine("Open note body excerpt: " + TruncateForAi(plain, 2000));
+
+        var selected = CurrentOrRememberedSelection().Text;
+        if (!string.IsNullOrWhiteSpace(selected))
+            sb.AppendLine("Selected note text: " + TruncateForAi(selected.Trim(), 800));
+
+        return sb.ToString();
     }
 
     /// <summary>Refresh the notes list + tag filter after the AI applied actions.</summary>
@@ -809,7 +872,49 @@ public sealed partial class MainPage : Page
     }
 
     // ----- toolbar active-state -----
-    private void Editor_SelectionChanged(object sender, RoutedEventArgs e) => UpdateToolbarState();
+    private void Editor_SelectionChanged(object sender, RoutedEventArgs e)
+    {
+        RememberSelection();
+        UpdateToolbarState();
+    }
+
+    private void RememberSelection()
+    {
+        if (_loading || Vm.CurrentNoteId == 0)
+            return;
+        var sel = EditorBox.Document.Selection;
+        var start = sel.StartPosition;
+        var end = sel.EndPosition;
+        if (end <= start || string.IsNullOrWhiteSpace(sel.Text))
+            return;
+        _lastEditorSelectionNoteId = Vm.CurrentNoteId;
+        _lastEditorSelectionStart = start;
+        _lastEditorSelectionEnd = end;
+        _lastEditorSelectionText = sel.Text;
+    }
+
+    private (int Start, int End, string Text) CurrentOrRememberedSelection()
+    {
+        var sel = EditorBox.Document.Selection;
+        if (sel.EndPosition > sel.StartPosition && !string.IsNullOrWhiteSpace(sel.Text))
+            return (sel.StartPosition, sel.EndPosition, sel.Text);
+        if (_lastEditorSelectionNoteId == Vm.CurrentNoteId &&
+            _lastEditorSelectionEnd > _lastEditorSelectionStart &&
+            !string.IsNullOrWhiteSpace(_lastEditorSelectionText))
+            return (_lastEditorSelectionStart, _lastEditorSelectionEnd, _lastEditorSelectionText);
+        return (0, 0, "");
+    }
+
+    private void ClearRememberedSelection()
+    {
+        _lastEditorSelectionNoteId = 0;
+        _lastEditorSelectionStart = 0;
+        _lastEditorSelectionEnd = 0;
+        _lastEditorSelectionText = "";
+    }
+
+    private static string TruncateForAi(string text, int max)
+        => text.Length <= max ? text : text[..max] + "...";
 
     private void UpdateToolbarState()
     {
@@ -1546,7 +1651,7 @@ public sealed partial class MainPage : Page
     {
         var dark = ActualTheme == ElementTheme.Dark;
         var surface = dark ? Color.FromArgb(255, 0x1E, 0x1E, 0x1E) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF);
-        var text = dark ? Color.FromArgb(255, 0xF5, 0xF5, 0xF5) : Color.FromArgb(255, 0x18, 0x18, 0x1B);
+        var text = dark ? Color.FromArgb(255, 0xFF, 0xFF, 0xFF) : Color.FromArgb(255, 0x18, 0x18, 0x1B);
         foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" })
             if (EditorBox.Resources[key] is SolidColorBrush b)
                 b.Color = surface;
@@ -1557,7 +1662,7 @@ public sealed partial class MainPage : Page
 
     // ----- helpers -----
     private Color ThemedTextColor() =>
-        EditorBox.Foreground is SolidColorBrush b ? b.Color : Color.FromArgb(255, 0xF5, 0xF5, 0xF5);
+        EditorBox.Foreground is SolidColorBrush b ? b.Color : Color.FromArgb(255, 0xFF, 0xFF, 0xFF);
 
     private static Color ColorFromHex(string hex)
     {
