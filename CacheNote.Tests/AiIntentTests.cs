@@ -9,17 +9,18 @@ public sealed class AiIntentTests
     [Theory]
     [InlineData("what tasks do I have today?")]
     [InlineData("show me my tasks")]
+    [InlineData("show me my reminders")]   // "reminders" (noun) must not trip the "remind" verb
+    [InlineData("list my reminders")]
     [InlineData("summarize this note")]
     [InlineData("explain how this works")]
     public void IsReadOnly_True_ForQuestionsAndLookups(string text)
         => Assert.True(AiIntent.IsReadOnlyRequest(text));
 
-    // Known heuristic limitation: "reminders" contains the action verb "remind", so a read-only
-    // "show me my reminders" routes to the planner instead of the chat-only path. It's still answered
-    // safely (the agent returns empty actions for questions); pinned here so the behavior is explicit.
-    [Fact]
-    public void IsReadOnly_False_ForReminderLookup_KnownQuirk()
-        => Assert.False(AiIntent.IsReadOnlyRequest("show me my reminders"));
+    [Theory]
+    [InlineData("remind me to call mom")]   // "remind" as a whole word is still an action
+    [InlineData("create a reminder")]
+    public void IsReadOnly_False_ForReminderActions(string text)
+        => Assert.False(AiIntent.IsReadOnlyRequest(text));
 
     [Theory]
     [InlineData("create a task to call mom")]

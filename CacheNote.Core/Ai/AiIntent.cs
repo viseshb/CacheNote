@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace CacheNote.Core.Ai;
 
 /// <summary>
@@ -13,10 +15,12 @@ public static class AiIntent
     public static bool IsRephraseRequest(string text)
         => ContainsAny(text, "rephrase", "rewrite", "word better", "make clearer", "improve wording");
 
-    /// <summary>A question/lookup with no action verb — answer in chat, change nothing.</summary>
+    /// <summary>A question/lookup with no action verb — answer in chat, change nothing. Action verbs
+    /// match on word boundaries so a noun like "reminders" is not mistaken for the verb "remind"
+    /// (otherwise "show me my reminders" would wrongly route to the planner).</summary>
     public static bool IsReadOnlyRequest(string text)
     {
-        if (ContainsAny(text, "create", "add", "make", "set", "schedule", "remind", "delete", "complete",
+        if (ContainsWord(text, "create", "add", "make", "set", "schedule", "remind", "delete", "complete",
                 "archive", "pin", "favorite", "unfavorite", "update", "edit", "change", "move", "snooze"))
             return false;
         return ContainsAny(text, "what", "which", "who", "when", "where", "why", "how many", "show", "list",
@@ -40,6 +44,14 @@ public static class AiIntent
     {
         var lower = text.ToLowerInvariant();
         return needles.Any(lower.Contains);
+    }
+
+    /// <summary>True if any word appears as a whole word (so "remind" matches "remind me" but not
+    /// "reminders"). Used for action-verb detection where plural nouns must not trip a verb.</summary>
+    public static bool ContainsWord(string text, params string[] words)
+    {
+        var lower = text.ToLowerInvariant();
+        return words.Any(w => Regex.IsMatch(lower, $@"\b{Regex.Escape(w)}\b"));
     }
 
     /// <summary>Lowercase and collapse punctuation (keep ':') to spaces so word checks are stable.</summary>

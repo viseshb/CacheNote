@@ -54,6 +54,14 @@ public sealed partial class MainPage : Page
     private int _lastEditorSelectionEnd;
     private string _lastEditorSelectionText = "";
 
+    // The selection a rephrase proposal was generated for, frozen at preview time. Kept separate from
+    // the rolling "_lastEditorSelection*" (which tracks the live caret) so reviewing the proposal —
+    // which can move focus/selection — can't retarget the apply onto the wrong span.
+    private long _rephraseTargetNoteId;
+    private int _rephraseTargetStart;
+    private int _rephraseTargetEnd;
+    private string _rephraseTargetText = "";
+
     // Responsive state: below Responsive.CompactMax the notes view becomes a single-pane
     // master-detail and the editor toolbar collapses into the "Tools" dropdown.
     private bool _compact;
@@ -469,6 +477,7 @@ public sealed partial class MainPage : Page
         LoadAttachments(id);
         ApplyTitleColor();
         ClearRememberedSelection();
+        ClearRephraseTarget();
     }
 
     /// <summary>Paint the title box with the note's stored title color (none → inherit theme).</summary>
@@ -622,31 +631,51 @@ public sealed partial class MainPage : Page
         if (string.IsNullOrWhiteSpace(text) || end <= start)
             return (false, "", "Select some text in the note to rephrase.");
 
-        _lastEditorSelectionNoteId = Vm.CurrentNoteId;
-        _lastEditorSelectionStart = start;
-        _lastEditorSelectionEnd = end;
-        _lastEditorSelectionText = text;
+        // Freeze the exact span this proposal targets, so apply replaces it (not a later selection).
+        _rephraseTargetNoteId = Vm.CurrentNoteId;
+        _rephraseTargetStart = start;
+        _rephraseTargetEnd = end;
+        _rephraseTargetText = text;
 
         var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
         var rephrased = await svc.RephraseAsync(text, instruction);
         return (true, rephrased, "Review the rephrase.");
     }
 
-    /// <summary>Apply an approved rephrase to the remembered editor selection.</summary>
+    /// <summary>Apply an approved rephrase to the exact selection captured when the proposal was made.</summary>
     public bool ApplyRephraseSelection(string rephrased)
     {
-        var (start, end, text) = CurrentOrRememberedSelection();
-        if (string.IsNullOrWhiteSpace(text) || end <= start || string.IsNullOrWhiteSpace(rephrased))
+        if (string.IsNullOrWhiteSpace(rephrased) ||
+            _rephraseTargetNoteId != Vm.CurrentNoteId ||
+            _rephraseTargetEnd <= _rephraseTargetStart ||
+            string.IsNullOrWhiteSpace(_rephraseTargetText))
             return false;
 
         var selection = EditorBox.Document.Selection;
         EditorBox.Focus(FocusState.Programmatic);
-        selection.SetRange(start, end);
+        selection.SetRange(_rephraseTargetStart, _rephraseTargetEnd);
+
+        // Guard stale offsets: if the note was edited so this range no longer holds the text we
+        // rephrased, bail rather than clobber whatever sits there now.
+        if (!string.Equals(selection.Text, _rephraseTargetText, StringComparison.Ordinal))
+        {
+            ClearRephraseTarget();
+            return false;
+        }
+
         selection.SetText(TextSetOptions.None, rephrased);
-        selection.SetRange(start + rephrased.Length, start + rephrased.Length);
-        ClearRememberedSelection();
+        selection.SetRange(_rephraseTargetStart + rephrased.Length, _rephraseTargetStart + rephrased.Length);
+        ClearRephraseTarget();
         OnContentChanged(this, null!);
         return true;
+    }
+
+    private void ClearRephraseTarget()
+    {
+        _rephraseTargetNoteId = 0;
+        _rephraseTargetStart = 0;
+        _rephraseTargetEnd = 0;
+        _rephraseTargetText = "";
     }
 
     /// <summary>Rephrase the editor's current selection in place. Kept for older tests/callers.</summary>
@@ -669,11 +698,11 @@ public sealed partial class MainPage : Page
         EditorBox.Document.GetText(TextGetOptions.None, out var plain);
         plain = (plain ?? "").Trim();
         if (plain.Length > 0)
-            sb.AppendLine("Open note body excerpt: " + TruncateForAi(plain, 2000));
+            sb.AppendLine("Open note body excerpt: " + CacheNote.Core.Ai.AiText.Truncate(plain, 2000));
 
         var selected = CurrentOrRememberedSelection().Text;
         if (!string.IsNullOrWhiteSpace(selected))
-            sb.AppendLine("Selected note text: " + TruncateForAi(selected.Trim(), 800));
+            sb.AppendLine("Selected note text: " + CacheNote.Core.Ai.AiText.Truncate(selected.Trim(), 800));
 
         return sb.ToString();
     }
@@ -912,9 +941,6 @@ public sealed partial class MainPage : Page
         _lastEditorSelectionEnd = 0;
         _lastEditorSelectionText = "";
     }
-
-    private static string TruncateForAi(string text, int max)
-        => text.Length <= max ? text : text[..max] + "...";
 
     private void UpdateToolbarState()
     {

@@ -1050,7 +1050,7 @@ public sealed partial class MainWindow : Window
             {
                 sb.AppendLine("Recent notes:");
                 foreach (var n in notes)
-                    sb.AppendLine("- " + (string.IsNullOrWhiteSpace(n.Title) ? "Untitled" : n.Title) + ": " + TruncateText(n.ContentPlain, 140));
+                    sb.AppendLine("- " + (string.IsNullOrWhiteSpace(n.Title) ? "Untitled" : n.Title) + ": " + AiText.Truncate(n.ContentPlain, 140, collapseWhitespace: true));
             }
 
             var favorites = App.GetService<INoteRepository>().GetFavoritesAndPinned().Take(6).ToList();
@@ -1099,12 +1099,6 @@ public sealed partial class MainWindow : Window
             sb.AppendLine("Some app data could not be read for context.");
         }
         return sb.ToString();
-    }
-
-    private static string TruncateText(string? text, int max)
-    {
-        var s = (text ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
-        return s.Length <= max ? s : s[..max] + "...";
     }
 
     // ----- AI ball dictation (shares the single-session DictationCoordinator with the editor mic) -----
