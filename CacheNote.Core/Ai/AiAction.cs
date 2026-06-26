@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace CacheNote.Core.Ai;
 
 /// <summary>The agentic actions the AI may propose (validated, previewed, then applied via repos).</summary>
@@ -28,6 +30,7 @@ public sealed class AiAction
     public bool? Pinned { get; set; }
     public bool? Archived { get; set; }
     public bool? Deleted { get; set; }
+    [JsonPropertyName("title_color_hex")]
     public string? TitleColorHex { get; set; }
 
     // Reminder / calendar event fields.
@@ -37,7 +40,9 @@ public sealed class AiAction
     public string? Recurrence { get; set; }  // event: none|daily|weekly|monthly|yearly
     public string? Kind { get; set; }        // event|birthday|meeting|appointment
     public string? Location { get; set; }
+    [JsonPropertyName("meeting_url")]
     public string? MeetingUrl { get; set; }
+    [JsonPropertyName("alert_minutes")]
     public int? AlertMinutes { get; set; }   // event alert: minutes before start (fires a reminder/toast)
 
     /// <summary>True when applying this action would archive or delete the open note — irreversible

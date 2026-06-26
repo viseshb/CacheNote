@@ -46,6 +46,30 @@ public sealed class AiAssistTests : IDisposable
     }
 
     [Fact]
+    public void ParsePlan_ReadsSnakeCaseActionFieldsFromSchema()
+    {
+        var raw = """
+        {
+          "reply": "Done",
+          "actions": [
+            {
+              "action": "create_event",
+              "title": "Launch review",
+              "meeting_url": "https://meet.example/launch",
+              "alert_minutes": 15,
+              "title_color_hex": "#FFFFFF"
+            }
+          ]
+        }
+        """;
+
+        var action = Assert.Single(AiAssistService.ParsePlan(raw).Actions);
+        Assert.Equal("https://meet.example/launch", action.MeetingUrl);
+        Assert.Equal(15, action.AlertMinutes);
+        Assert.Equal("#FFFFFF", action.TitleColorHex);
+    }
+
+    [Fact]
     public void Apply_CreatesReminder_Event_And_FavoriteNote()
     {
         var notes = new NoteRepository(_factory);
