@@ -561,11 +561,16 @@ public sealed partial class MainWindow : Window
 
             if (plan.Actions.Count > 0)
             {
+                // Capture the note the plan was made against now, so a confirm card the user answers
+                // later still targets that note even if they've navigated to another section.
+                var planSection = CurrentSectionName();
+                long? planNoteId = (RootFrame.Content as MainPage)?.CurrentNoteIdOrNull;
+
                 // Archiving/deleting the open note is hard to undo — confirm before applying the batch.
                 if (plan.Actions.Any(a => a.IsDestructive))
-                    ConfirmThenApplyPlan(plan);
+                    ConfirmThenApplyPlan(plan, planSection, planNoteId);
                 else
-                    ApplyPlan(plan);
+                    ApplyPlan(plan, planSection, planNoteId);
             }
             else
             {
@@ -582,12 +587,11 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    /// <summary>Apply by default — run the actions immediately, report, and offer to jump to the result.</summary>
-    private void ApplyPlan(AiPlan plan)
+    /// <summary>Apply by default — run the actions immediately, report, and offer to jump to the result.
+    /// <paramref name="noteId"/> is the note the plan was made against (captured at plan time).</summary>
+    private void ApplyPlan(AiPlan plan, string fromSection, long? noteId)
     {
         var svc = App.GetService<AiAssistService>();
-        var currentSection = CurrentSectionName();
-        long? noteId = (RootFrame.Content as MainPage)?.CurrentNoteIdOrNull;
         var summary = svc.Apply(plan.Actions, noteId);
         var createdNoteId = svc.LastCreatedNoteId;
         AiConversation.Children.Add(new TextBlock
@@ -601,12 +605,12 @@ public sealed partial class MainWindow : Window
         AiStatus.Text = summary;             // starts with "Applied"
         _aiHistory.Add("Assistant: " + summary);
         RefreshAfterAi();
-        OfferRedirectIfUseful(plan.Actions, currentSection, createdNoteId);
+        OfferRedirectIfUseful(plan.Actions, fromSection, createdNoteId);
         ScrollAiToEnd();
     }
 
     /// <summary>Show a Yes/No card before applying a plan that would archive or delete the open note.</summary>
-    private void ConfirmThenApplyPlan(AiPlan plan)
+    private void ConfirmThenApplyPlan(AiPlan plan, string fromSection, long? noteId)
     {
         var verb = plan.Actions.Any(a => a.Action == AiActionKinds.SetCurrentNoteState && a.Deleted == true)
             ? "delete" : "archive";
@@ -639,7 +643,7 @@ public sealed partial class MainWindow : Window
         yes.Click += (_, _) =>
         {
             AiConversation.Children.Remove(card);
-            ApplyPlan(plan);
+            ApplyPlan(plan, fromSection, noteId);
         };
         no.Click += (_, _) =>
         {

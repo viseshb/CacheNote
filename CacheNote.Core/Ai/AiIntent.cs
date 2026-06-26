@@ -9,6 +9,12 @@ namespace CacheNote.Core.Ai;
 /// </summary>
 public static class AiIntent
 {
+    // Action verbs that mark a request as "do something" (so it's not chat-only). Matched on word
+    // boundaries — precompiled once — so a plural noun like "reminders" never trips the "remind" verb.
+    private static readonly Regex ActionVerb = new(
+        @"\b(create|add|make|set|schedule|remind|delete|complete|archive|pin|favorite|unfavorite|update|edit|change|move|snooze)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     public static bool IsSummaryRequest(string text)
         => ContainsAny(text, "summarize", "summary", "overview", "recap");
 
@@ -20,8 +26,7 @@ public static class AiIntent
     /// (otherwise "show me my reminders" would wrongly route to the planner).</summary>
     public static bool IsReadOnlyRequest(string text)
     {
-        if (ContainsWord(text, "create", "add", "make", "set", "schedule", "remind", "delete", "complete",
-                "archive", "pin", "favorite", "unfavorite", "update", "edit", "change", "move", "snooze"))
+        if (ActionVerb.IsMatch(text))
             return false;
         return ContainsAny(text, "what", "which", "who", "when", "where", "why", "how many", "show", "list",
             "tell me", "summarize", "summary", "overview", "recap", "status", "review", "explain", "do i have");
@@ -44,14 +49,6 @@ public static class AiIntent
     {
         var lower = text.ToLowerInvariant();
         return needles.Any(lower.Contains);
-    }
-
-    /// <summary>True if any word appears as a whole word (so "remind" matches "remind me" but not
-    /// "reminders"). Used for action-verb detection where plural nouns must not trip a verb.</summary>
-    public static bool ContainsWord(string text, params string[] words)
-    {
-        var lower = text.ToLowerInvariant();
-        return words.Any(w => Regex.IsMatch(lower, $@"\b{Regex.Escape(w)}\b"));
     }
 
     /// <summary>Lowercase and collapse punctuation (keep ':') to spaces so word checks are stable.</summary>

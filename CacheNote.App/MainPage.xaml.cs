@@ -656,8 +656,9 @@ public sealed partial class MainPage : Page
         selection.SetRange(_rephraseTargetStart, _rephraseTargetEnd);
 
         // Guard stale offsets: if the note was edited so this range no longer holds the text we
-        // rephrased, bail rather than clobber whatever sits there now.
-        if (!string.Equals(selection.Text, _rephraseTargetText, StringComparison.Ordinal))
+        // rephrased, bail rather than clobber whatever sits there now. Compare on normalized line
+        // endings so RichEdit's \r vs \r\n representation doesn't trigger a false mismatch.
+        if (!string.Equals(NormalizeNewlines(selection.Text), NormalizeNewlines(_rephraseTargetText), StringComparison.Ordinal))
         {
             ClearRephraseTarget();
             return false;
@@ -677,6 +678,8 @@ public sealed partial class MainPage : Page
         _rephraseTargetEnd = 0;
         _rephraseTargetText = "";
     }
+
+    private static string NormalizeNewlines(string s) => s.Replace("\r\n", "\n").Replace('\r', '\n');
 
     /// <summary>Rephrase the editor's current selection in place. Kept for older tests/callers.</summary>
     public async Task<string> RephraseSelectionAsync()
