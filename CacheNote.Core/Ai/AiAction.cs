@@ -1,9 +1,14 @@
+using System.Text.Json.Serialization;
+
 namespace CacheNote.Core.Ai;
 
 /// <summary>The agentic actions the AI may propose (validated, previewed, then applied via repos).</summary>
 public static class AiActionKinds
 {
     public const string CreateNote = "create_note";
+    public const string UpdateCurrentNote = "update_current_note";
+    public const string AppendToCurrentNote = "append_to_current_note";
+    public const string SetCurrentNoteState = "set_current_note_state";
     public const string AddChecklist = "add_checklist";
     public const string CreateTask = "create_task";
     public const string AddTag = "add_tag";
@@ -22,6 +27,11 @@ public sealed class AiAction
     public string? Priority { get; set; }    // low | medium | high
     public string? Name { get; set; }        // tag name
     public bool? Favorite { get; set; }      // mark a created note as favorite
+    public bool? Pinned { get; set; }
+    public bool? Archived { get; set; }
+    public bool? Deleted { get; set; }
+    [JsonPropertyName("title_color_hex")]
+    public string? TitleColorHex { get; set; }
 
     // Reminder / calendar event fields.
     public string? Date { get; set; }        // YYYY-MM-DD
@@ -30,13 +40,23 @@ public sealed class AiAction
     public string? Recurrence { get; set; }  // event: none|daily|weekly|monthly|yearly
     public string? Kind { get; set; }        // event|birthday|meeting|appointment
     public string? Location { get; set; }
+    [JsonPropertyName("meeting_url")]
     public string? MeetingUrl { get; set; }
+    [JsonPropertyName("alert_minutes")]
     public int? AlertMinutes { get; set; }   // event alert: minutes before start (fires a reminder/toast)
+
+    /// <summary>True when applying this action would archive or delete the open note — irreversible
+    /// enough to warrant a confirmation step before it runs.</summary>
+    public bool IsDestructive =>
+        Action == AiActionKinds.SetCurrentNoteState && (Archived == true || Deleted == true);
 
     /// <summary>A human-readable one-line description for the preview.</summary>
     public string Describe() => Action switch
     {
         AiActionKinds.CreateNote => $"Create note: \"{Title}\"" + (Favorite == true ? " ★" : ""),
+        AiActionKinds.UpdateCurrentNote => $"Update current note" + (string.IsNullOrWhiteSpace(Title) ? "" : $": \"{Title}\""),
+        AiActionKinds.AppendToCurrentNote => "Append to current note",
+        AiActionKinds.SetCurrentNoteState => "Update current note settings",
         AiActionKinds.AddChecklist => $"Add checklist ({Items?.Count ?? 0} items)",
         AiActionKinds.CreateTask => $"Create task: \"{Title}\"" + (Priority is null ? "" : $" [{Priority}]") + DueSuffix(),
         AiActionKinds.AddTag => $"Add tag: #{Name}",

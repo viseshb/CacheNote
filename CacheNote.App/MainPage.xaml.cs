@@ -49,6 +49,18 @@ public sealed partial class MainPage : Page
     private bool _listVisible = true;
     private int _selStart;
     private int _selEnd;
+    private long _lastEditorSelectionNoteId;
+    private int _lastEditorSelectionStart;
+    private int _lastEditorSelectionEnd;
+    private string _lastEditorSelectionText = "";
+
+    // The selection a rephrase proposal was generated for, frozen at preview time. Kept separate from
+    // the rolling "_lastEditorSelection*" (which tracks the live caret) so reviewing the proposal —
+    // which can move focus/selection — can't retarget the apply onto the wrong span.
+    private long _rephraseTargetNoteId;
+    private int _rephraseTargetStart;
+    private int _rephraseTargetEnd;
+    private string _rephraseTargetText = "";
 
     // Responsive state: below Responsive.CompactMax the notes view becomes a single-pane
     // master-detail and the editor toolbar collapses into the "Tools" dropdown.
@@ -73,7 +85,7 @@ public sealed partial class MainPage : Page
         FontSizeCombo.ItemsSource = Sizes;
         FontSizeCombo.Text = "16";
         BuildSwatches();
-        CustomColorPicker.Color = Color.FromArgb(255, 0x25, 0x63, 0xEB); // vivid default (so light mode isn't seeded dark)
+        CustomColorPicker.Color = Color.FromArgb(255, 0xFF, 0xFF, 0xFF);
         _syncing = false;
 
         // We have our own formatting toolbar — suppress the floating selection bar
@@ -464,6 +476,8 @@ public sealed partial class MainPage : Page
         _loading = false;
         LoadAttachments(id);
         ApplyTitleColor();
+        ClearRememberedSelection();
+        ClearRephraseTarget();
     }
 
     /// <summary>Paint the title box with the note's stored title color (none → inherit theme).</summary>
@@ -591,6 +605,14 @@ public sealed partial class MainPage : Page
     public long? CurrentNoteIdOrNull => Vm.CurrentNoteId == 0 ? null : Vm.CurrentNoteId;
 
     /// <summary>Summarize the open note and append the summary at the end.</summary>
+    public async Task<string> PreviewSummaryActiveNoteAsync()
+    {
+        var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
+        EditorBox.Document.GetText(TextGetOptions.None, out var plain);
+        return await svc.SummarizeAsync(plain);
+    }
+
+    /// <summary>Summarize the open note and append the summary at the end. Kept for older tests/callers.</summary>
     public async Task<string> SummarizeActiveNoteAsync()
     {
         var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
@@ -602,17 +624,90 @@ public sealed partial class MainPage : Page
         return "Summary inserted at the end of the note.";
     }
 
-    /// <summary>Rephrase the editor's current selection in place.</summary>
+    /// <summary>Generate a rephrase proposal without changing the note.</summary>
+    public async Task<(bool HasSelection, string Text, string Message)> PreviewRephraseSelectionAsync(string? instruction = null)
+    {
+        var (start, end, text) = CurrentOrRememberedSelection();
+        if (string.IsNullOrWhiteSpace(text) || end <= start)
+            return (false, "", "Select some text in the note to rephrase.");
+
+        // Freeze the exact span this proposal targets, so apply replaces it (not a later selection).
+        _rephraseTargetNoteId = Vm.CurrentNoteId;
+        _rephraseTargetStart = start;
+        _rephraseTargetEnd = end;
+        _rephraseTargetText = text;
+
+        var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
+        var rephrased = await svc.RephraseAsync(text, instruction);
+        return (true, rephrased, "Review the rephrase.");
+    }
+
+    /// <summary>Apply an approved rephrase to the exact selection captured when the proposal was made.</summary>
+    public bool ApplyRephraseSelection(string rephrased)
+    {
+        if (string.IsNullOrWhiteSpace(rephrased) ||
+            _rephraseTargetNoteId != Vm.CurrentNoteId ||
+            _rephraseTargetEnd <= _rephraseTargetStart ||
+            string.IsNullOrWhiteSpace(_rephraseTargetText))
+            return false;
+
+        var selection = EditorBox.Document.Selection;
+        EditorBox.Focus(FocusState.Programmatic);
+        selection.SetRange(_rephraseTargetStart, _rephraseTargetEnd);
+
+        // Guard stale offsets: if the note was edited so this range no longer holds the text we
+        // rephrased, bail rather than clobber whatever sits there now. Compare on normalized line
+        // endings so RichEdit's \r vs \r\n representation doesn't trigger a false mismatch.
+        if (!string.Equals(NormalizeNewlines(selection.Text), NormalizeNewlines(_rephraseTargetText), StringComparison.Ordinal))
+        {
+            ClearRephraseTarget();
+            return false;
+        }
+
+        selection.SetText(TextSetOptions.None, rephrased);
+        selection.SetRange(_rephraseTargetStart + rephrased.Length, _rephraseTargetStart + rephrased.Length);
+        ClearRephraseTarget();
+        OnContentChanged(this, null!);
+        return true;
+    }
+
+    private void ClearRephraseTarget()
+    {
+        _rephraseTargetNoteId = 0;
+        _rephraseTargetStart = 0;
+        _rephraseTargetEnd = 0;
+        _rephraseTargetText = "";
+    }
+
+    private static string NormalizeNewlines(string s) => s.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    /// <summary>Rephrase the editor's current selection in place. Kept for older tests/callers.</summary>
     public async Task<string> RephraseSelectionAsync()
     {
-        var sel = EditorBox.Document.Selection.Text;
-        if (string.IsNullOrWhiteSpace(sel))
-            return "Select some text in the note to rephrase.";
-        var svc = App.GetService<CacheNote.Core.Ai.AiAssistService>();
-        var rephrased = await svc.RephraseAsync(sel);
-        EditorBox.Document.Selection.SetText(TextSetOptions.None, rephrased);
-        OnContentChanged(this, null!);
-        return "Selection rephrased.";
+        var proposal = await PreviewRephraseSelectionAsync();
+        if (!proposal.HasSelection)
+            return proposal.Message;
+        return ApplyRephraseSelection(proposal.Text) ? "Selection rephrased." : "Select some text in the note to rephrase.";
+    }
+
+    /// <summary>Compact app context for the global assistant: open note + selected text.</summary>
+    public string GetAiContext()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Current page: Notes");
+        sb.AppendLine($"Open note id: {Vm.CurrentNoteId}");
+        sb.AppendLine("Open note title: " + (string.IsNullOrWhiteSpace(Vm.Title) ? "Untitled" : Vm.Title));
+
+        EditorBox.Document.GetText(TextGetOptions.None, out var plain);
+        plain = (plain ?? "").Trim();
+        if (plain.Length > 0)
+            sb.AppendLine("Open note body excerpt: " + CacheNote.Core.Ai.AiText.Truncate(plain, 2000));
+
+        var selected = CurrentOrRememberedSelection().Text;
+        if (!string.IsNullOrWhiteSpace(selected))
+            sb.AppendLine("Selected note text: " + CacheNote.Core.Ai.AiText.Truncate(selected.Trim(), 800));
+
+        return sb.ToString();
     }
 
     /// <summary>Refresh the notes list + tag filter after the AI applied actions.</summary>
@@ -809,7 +904,46 @@ public sealed partial class MainPage : Page
     }
 
     // ----- toolbar active-state -----
-    private void Editor_SelectionChanged(object sender, RoutedEventArgs e) => UpdateToolbarState();
+    private void Editor_SelectionChanged(object sender, RoutedEventArgs e)
+    {
+        RememberSelection();
+        UpdateToolbarState();
+    }
+
+    private void RememberSelection()
+    {
+        if (_loading || Vm.CurrentNoteId == 0)
+            return;
+        var sel = EditorBox.Document.Selection;
+        var start = sel.StartPosition;
+        var end = sel.EndPosition;
+        if (end <= start || string.IsNullOrWhiteSpace(sel.Text))
+            return;
+        _lastEditorSelectionNoteId = Vm.CurrentNoteId;
+        _lastEditorSelectionStart = start;
+        _lastEditorSelectionEnd = end;
+        _lastEditorSelectionText = sel.Text;
+    }
+
+    private (int Start, int End, string Text) CurrentOrRememberedSelection()
+    {
+        var sel = EditorBox.Document.Selection;
+        if (sel.EndPosition > sel.StartPosition && !string.IsNullOrWhiteSpace(sel.Text))
+            return (sel.StartPosition, sel.EndPosition, sel.Text);
+        if (_lastEditorSelectionNoteId == Vm.CurrentNoteId &&
+            _lastEditorSelectionEnd > _lastEditorSelectionStart &&
+            !string.IsNullOrWhiteSpace(_lastEditorSelectionText))
+            return (_lastEditorSelectionStart, _lastEditorSelectionEnd, _lastEditorSelectionText);
+        return (0, 0, "");
+    }
+
+    private void ClearRememberedSelection()
+    {
+        _lastEditorSelectionNoteId = 0;
+        _lastEditorSelectionStart = 0;
+        _lastEditorSelectionEnd = 0;
+        _lastEditorSelectionText = "";
+    }
 
     private void UpdateToolbarState()
     {
@@ -1546,7 +1680,7 @@ public sealed partial class MainPage : Page
     {
         var dark = ActualTheme == ElementTheme.Dark;
         var surface = dark ? Color.FromArgb(255, 0x1E, 0x1E, 0x1E) : Color.FromArgb(255, 0xFF, 0xFF, 0xFF);
-        var text = dark ? Color.FromArgb(255, 0xF5, 0xF5, 0xF5) : Color.FromArgb(255, 0x18, 0x18, 0x1B);
+        var text = dark ? Color.FromArgb(255, 0xFF, 0xFF, 0xFF) : Color.FromArgb(255, 0x18, 0x18, 0x1B);
         foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" })
             if (EditorBox.Resources[key] is SolidColorBrush b)
                 b.Color = surface;
@@ -1557,7 +1691,7 @@ public sealed partial class MainPage : Page
 
     // ----- helpers -----
     private Color ThemedTextColor() =>
-        EditorBox.Foreground is SolidColorBrush b ? b.Color : Color.FromArgb(255, 0xF5, 0xF5, 0xF5);
+        EditorBox.Foreground is SolidColorBrush b ? b.Color : Color.FromArgb(255, 0xFF, 0xFF, 0xFF);
 
     private static Color ColorFromHex(string hex)
     {

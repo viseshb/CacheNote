@@ -46,6 +46,30 @@ public sealed class AiAssistTests : IDisposable
     }
 
     [Fact]
+    public void ParsePlan_ReadsSnakeCaseActionFieldsFromSchema()
+    {
+        var raw = """
+        {
+          "reply": "Done",
+          "actions": [
+            {
+              "action": "create_event",
+              "title": "Launch review",
+              "meeting_url": "https://meet.example/launch",
+              "alert_minutes": 15,
+              "title_color_hex": "#FFFFFF"
+            }
+          ]
+        }
+        """;
+
+        var action = Assert.Single(AiAssistService.ParsePlan(raw).Actions);
+        Assert.Equal("https://meet.example/launch", action.MeetingUrl);
+        Assert.Equal(15, action.AlertMinutes);
+        Assert.Equal("#FFFFFF", action.TitleColorHex);
+    }
+
+    [Fact]
     public void Apply_CreatesReminder_Event_And_FavoriteNote()
     {
         var notes = new NoteRepository(_factory);
@@ -58,19 +82,80 @@ public sealed class AiAssistTests : IDisposable
 
         var actions = new List<AiAction>
         {
-            new() { Action = AiActionKinds.CreateNote, Title = "Pinned idea", Favorite = true },
+            new() { Action = AiActionKinds.CreateNote, Title = "Pinned idea", Body = "Visible note body", Favorite = true },
             new() { Action = AiActionKinds.CreateReminder, Title = "Standup", Date = "2026-07-01", Time = "09:00", Repeat = "daily" },
             new() { Action = AiActionKinds.CreateEvent, Title = "Frida's birthday", Date = "2026-06-25", Kind = "birthday", AlertMinutes = 0 },
         };
 
         executor.Apply(actions, currentNoteId: null);
 
-        Assert.Contains(notes.GetAllActive(), n => n.Favorite && n.Title == "Pinned idea");
+        Assert.Contains(notes.GetAllActive(), n => n.Favorite && n.Title == "Pinned idea" && n.ContentRtf is { Length: > 0 });
         // The reminder lands on the reminder list AND a companion event on the calendar; the birthday
         // event (with an alert) also creates a linked reminder → at least 2 reminders, ≥ 2 events.
         Assert.True(reminders.GetAll().Count >= 2);
         Assert.True(events.GetAll().Count >= 2);
         Assert.Contains(events.GetAll(), e => e.Kind == "birthday" && e.Recurrence == "yearly");
+    }
+
+    [Fact]
+    public void Apply_CurrentNoteActions_UpdateBodyFlagsAndAppend()
+    {
+        var notes = new NoteRepository(_factory);
+        var reminderRepo = new ReminderRepository(_factory);
+        var executor = new AiActionExecutor(notes, new ChecklistRepository(_factory),
+            new TaskService(new TaskRepository(_factory)), new TagService(new TagRepository(_factory)),
+            new EventService(new EventRepository(_factory), reminderRepo), new ReminderService(reminderRepo));
+
+        var noteId = notes.Insert(new CacheNote.Core.Models.Note
+        {
+            Title = "Original",
+            ContentPlain = "Old body",
+        });
+
+        executor.Apply([
+            new() { Action = AiActionKinds.UpdateCurrentNote, Title = "Reworked", Body = "New body", Favorite = true, Pinned = true, TitleColorHex = "#FFFFFF" },
+            new() { Action = AiActionKinds.AppendToCurrentNote, Body = "Follow-up line" },
+        ], currentNoteId: noteId);
+
+        var note = notes.GetById(noteId)!;
+        Assert.Equal("Reworked", note.Title);
+        Assert.Contains("New body", note.ContentPlain);
+        Assert.Contains("Follow-up line", note.ContentPlain);
+        Assert.NotNull(note.ContentRtf);
+        Assert.True(note.Favorite);
+        Assert.True(note.Pinned);
+        Assert.Equal("#FFFFFF", note.TitleColorHex);
+    }
+
+    [Fact]
+    public void Apply_ExposesCreatedNoteId_ForExactNavigation()
+    {
+        var notes = new NoteRepository(_factory);
+        var reminderRepo = new ReminderRepository(_factory);
+        var executor = new AiActionExecutor(notes, new ChecklistRepository(_factory),
+            new TaskService(new TaskRepository(_factory)), new TagService(new TagRepository(_factory)),
+            new EventService(new EventRepository(_factory), reminderRepo), new ReminderService(reminderRepo));
+
+        // Two notes share a title — title lookup would be ambiguous; the id must be exact.
+        notes.Insert(new CacheNote.Core.Models.Note { Title = "Dup", ContentPlain = "first" });
+        executor.Apply([new() { Action = AiActionKinds.CreateNote, Title = "Dup", Body = "second" }], currentNoteId: null);
+
+        Assert.NotNull(executor.LastCreatedNoteId);
+        var created = notes.GetById(executor.LastCreatedNoteId!.Value)!;
+        Assert.Equal("second", created.ContentPlain);
+
+        // A follow-up apply that creates nothing must clear it.
+        executor.Apply([new() { Action = AiActionKinds.AddTag, Name = "x" }], currentNoteId: created.Id);
+        Assert.Null(executor.LastCreatedNoteId);
+    }
+
+    [Fact]
+    public void IsDestructive_OnlyForArchiveOrDeleteState()
+    {
+        Assert.True(new AiAction { Action = AiActionKinds.SetCurrentNoteState, Deleted = true }.IsDestructive);
+        Assert.True(new AiAction { Action = AiActionKinds.SetCurrentNoteState, Archived = true }.IsDestructive);
+        Assert.False(new AiAction { Action = AiActionKinds.SetCurrentNoteState, Pinned = true }.IsDestructive);
+        Assert.False(new AiAction { Action = AiActionKinds.CreateNote, Title = "x" }.IsDestructive);
     }
 
     [Fact]

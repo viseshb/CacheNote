@@ -580,7 +580,7 @@
                             ToolTipService.ToolTip="Text color">
                             <StackPanel Spacing="1">
                                 <TextBlock HorizontalAlignment="Center" FontSize="14" FontWeight="SemiBold" Text="A" />
-                                <Rectangle x:Name="ColorBar" Width="16" Height="3" Fill="{ThemeResource AppAccentBrush}" RadiusX="1" RadiusY="1" />
+                                <Rectangle x:Name="ColorBar" Width="16" Height="3" Fill="{ThemeResource AppTextPrimaryBrush}" RadiusX="1" RadiusY="1" />
                             </StackPanel>
                             <Button.Flyout>
                                 <Flyout
