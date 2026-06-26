@@ -140,9 +140,14 @@ public sealed partial class MainWindow : Window
         _pinSync = true; PinToggle.IsChecked = alwaysOnTop; _pinSync = false;
         PauseNotifyItem.IsChecked = settings.GetBool("pause_notifications");
 
-        // Global Ctrl+Shift+N → new note, even when the app is in the tray.
+        // Global hotkeys, active even when the app is hidden in the tray / notification overflow:
+        //   Ctrl+Shift+N → new note     Ctrl+Alt+C → just open & focus CacheNote
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-        _hotkey = new GlobalHotkey(hwnd, 0x4E /* VK_N */, () => DispatcherQueue.TryEnqueue(NewNote));
+        _hotkey = new GlobalHotkey(hwnd);
+        _hotkey.Register(GlobalHotkey.ModControl | GlobalHotkey.ModShift, 0x4E /* VK_N */, () => DispatcherQueue.TryEnqueue(NewNote));
+        // Non-fatal if another app owns Ctrl+Alt+C: tray left-click and Ctrl+Shift+N still open us.
+        if (!_hotkey.Register(GlobalHotkey.ModControl | GlobalHotkey.ModAlt, 0x43 /* VK_C */, () => DispatcherQueue.TryEnqueue(ShowAndActivate)))
+            System.Diagnostics.Debug.WriteLine("CacheNote: Ctrl+Alt+C open-hotkey already in use; skipped.");
 
         StartReminderEngine();
         StartGoogleSync();

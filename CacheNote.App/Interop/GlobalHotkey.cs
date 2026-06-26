@@ -1,46 +1,57 @@
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace CacheNote_App.Interop;
 
 /// <summary>
-/// Registers a system-wide hotkey (used for Ctrl+Shift+N → new note) by subclassing
-/// the window's WndProc and listening for <c>WM_HOTKEY</c>. The replacement WndProc
-/// delegate is held in a field so the GC cannot collect it while Windows still holds
-/// the function pointer — a collected delegate is the classic cause of subclass crashes.
+/// Registers one or more system-wide hotkeys (e.g. Ctrl+Shift+N → new note, Ctrl+Alt+C → open) by
+/// subclassing the window's WndProc once and listening for <c>WM_HOTKEY</c>. Each binding gets a
+/// distinct hotkey id so they don't collide. The replacement WndProc delegate is held in a field so
+/// the GC cannot collect it while Windows still holds the function pointer — a collected delegate is
+/// the classic cause of subclass crashes.
 /// </summary>
 /// <remarks>Verified on win-x64. win-x86 uses the SetWindowLongW fallback (untested here).</remarks>
 public sealed class GlobalHotkey : IDisposable
 {
+    public const uint ModControl = 0x0002;
+    public const uint ModShift = 0x0004;
+    public const uint ModAlt = 0x0001;
+
     private const int WM_HOTKEY = 0x0312;
     private const int GWLP_WNDPROC = -4;
-    private const uint MOD_CONTROL = 0x0002, MOD_SHIFT = 0x0004, MOD_NOREPEAT = 0x4000;
-    private const int HotkeyId = 0xB001;
+    private const uint MOD_NOREPEAT = 0x4000;
 
     private delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     private readonly IntPtr _hwnd;
-    private readonly Action _onPressed;
     private readonly WndProc _hookProc;   // kept alive deliberately (do not inline)
+    private readonly Dictionary<int, Action> _actions = new();
     private IntPtr _oldProc;
+    private int _nextId = 0xB001;
     private bool _disposed;
 
-    public GlobalHotkey(IntPtr hwnd, uint virtualKey, Action onPressed)
+    public GlobalHotkey(IntPtr hwnd)
     {
         _hwnd = hwnd;
-        _onPressed = onPressed;
         _hookProc = HookProc;
-
         _oldProc = SetWindowLongPtr(_hwnd, GWLP_WNDPROC, Marshal.GetFunctionPointerForDelegate(_hookProc));
-        IsRegistered = RegisterHotKey(_hwnd, HotkeyId, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, virtualKey);
     }
 
-    /// <summary>False when another app already owns the hotkey (registration silently failed).</summary>
-    public bool IsRegistered { get; }
+    /// <summary>Register a hotkey. Returns false when another app already owns this combination
+    /// (registration silently fails) — the caller can surface that to the user.</summary>
+    public bool Register(uint modifiers, uint virtualKey, Action onPressed)
+    {
+        var id = _nextId++;
+        if (!RegisterHotKey(_hwnd, id, modifiers | MOD_NOREPEAT, virtualKey))
+            return false;
+        _actions[id] = onPressed;
+        return true;
+    }
 
     private IntPtr HookProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
-        if (msg == WM_HOTKEY && wParam.ToInt32() == HotkeyId)
-            _onPressed();
+        if (msg == WM_HOTKEY && _actions.TryGetValue(wParam.ToInt32(), out var action))
+            action();
         return CallWindowProc(_oldProc, hWnd, msg, wParam, lParam);
     }
 
@@ -50,7 +61,10 @@ public sealed class GlobalHotkey : IDisposable
             return;
         _disposed = true;
 
-        UnregisterHotKey(_hwnd, HotkeyId);
+        foreach (var id in _actions.Keys)
+            UnregisterHotKey(_hwnd, id);
+        _actions.Clear();
+
         if (_oldProc != IntPtr.Zero)
         {
             SetWindowLongPtr(_hwnd, GWLP_WNDPROC, _oldProc);
